@@ -95,7 +95,7 @@ BitcoinGUI::BitcoinGUI(bool fIsTestnet, QWidget *parent) :
     
     qApp->setPalette(darkPalette);
 
-    qApp->setStyleSheet("QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }");
+    qApp->setStyleSheet("QToolTip { color: #ffffff; background-color: #191919; border: 1px solid white; }");
 
     QString windowTitle = tr("Cryptonite") + " - ";
 #ifdef ENABLE_WALLET
