@@ -25,10 +25,8 @@ SignVerifyMessageDialog::SignVerifyMessageDialog(QWidget *parent) :
 {
     ui->setupUi(this);
 
-#if QT_VERSION >= 0x040700
     ui->signatureOut_SM->setPlaceholderText(tr("Click \"Sign Message\" to generate signature"));
     ui->addressIn_VM->setPlaceholderText(tr("Enter a Cryptonite address (e.g. CNS17iag9jJgTHD1VXjvLCEnZuQ3rJDE9L)"));
-#endif
 
     GUIUtil::setupAddressWidget(ui->addressIn_SM, this);
     GUIUtil::setupAddressWidget(ui->addressIn_VM, this);
@@ -218,17 +216,7 @@ void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
     ss << ui->messageIn_VM->document()->toPlainText().toStdString();
 
     CPubKey pubkey;
-#if 0
-    if (!pubkey.RecoverCompact(Hash(ss.begin(), ss.end()), vchSig))
-    {
-        ui->signatureIn_VM->setValid(false);
-        ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
-        ui->statusLabel_VM->setText(tr("The signature did not match the message digest.") + QString(" ") + tr("Please check the signature and try again."));
-        return;
-    }
-#else
     assert(0);
-#endif
 
     if (!(CBitcoinAddress(pubkey.GetID()) == addr))
     {
