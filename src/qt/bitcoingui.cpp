@@ -90,6 +90,7 @@ BitcoinGUI::BitcoinGUI(bool fIsTestnet, QWidget *parent) :
     qApp->setPalette(darkPalette);
 
     qApp->setStyleSheet("QToolTip { color: #ffffff; background-color: #191919; border: 1px solid white; }");
+    qApp->setStyleSheet("QToolBar { background-color: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 black, stop: 1 #0a4200); border: 1px solid black; }");
 
     QString windowTitle = tr("Cryptonite") + " - ";
 #ifdef ENABLE_WALLET
@@ -392,12 +393,21 @@ void BitcoinGUI::createToolBars()
     if(walletFrame)
     {
         QToolBar *toolbar = addToolBar(tr("Tabs toolbar"));
-	toolbar->setMovable(false);
-        toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        QWidget *spacerWidget = new QWidget(this);
+            spacerWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+            spacerWidget->setVisible(true);
+        QWidget *spacerWidget2 = new QWidget(this);
+            spacerWidget2->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+            spacerWidget2->setVisible(true);
+        toolbar->setIconSize(QSize(60, 35));
+        toolbar->setMovable(false);
+        toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        toolbar->addWidget(spacerWidget);
         toolbar->addAction(overviewAction);
         toolbar->addAction(sendCoinsAction);
         toolbar->addAction(receiveCoinsAction);
         toolbar->addAction(historyAction);
+        toolbar->addWidget(spacerWidget2);
         overviewAction->setChecked(true);
     }
 }
