@@ -33,6 +33,7 @@
 #include <QDateTime>
 #include <QDesktopWidget>
 #include <QDragEnterEvent>
+#include <QFile>
 #include <QIcon>
 #include <QLabel>
 #include <QListWidget>
@@ -69,30 +70,32 @@ BitcoinGUI::BitcoinGUI(bool fIsTestnet, QWidget *parent) :
 {
     GUIUtil::restoreWindowGeometry("nWindow", QSize(850, 550), this);
 
+    // Set a basic style palette
     qApp->setStyle(QStyleFactory::create("Fusion"));
+    QPalette pal;
+    pal.setColor(QPalette::Window, QColor(10,10,10));
+    pal.setColor(QPalette::WindowText, Qt::white);
+    pal.setColor(QPalette::Base, QColor(25,25,25));
+    pal.setColor(QPalette::AlternateBase, QColor(15,15,15));
+    pal.setColor(QPalette::Text, Qt::white);
+    pal.setColor(QPalette::Button, QColor(0,50,100));
+    pal.setColor(QPalette::ButtonText, Qt::white);
+    pal.setColor(QPalette::BrightText, Qt::red);
+    pal.setColor(QPalette::Link, QColor(42, 130, 218));
+    pal.setColor(QPalette::Highlight, QColor(42, 130, 218));
+    pal.setColor(QPalette::HighlightedText, Qt::black);
+    qApp->setPalette(pal);
 
-    QPalette darkPalette;
-    darkPalette.setColor(QPalette::Window, QColor(53,53,53));
-    darkPalette.setColor(QPalette::WindowText, Qt::white);
-    darkPalette.setColor(QPalette::Base, QColor(25,25,25));
-    darkPalette.setColor(QPalette::AlternateBase, QColor(53,53,53));
-    darkPalette.setColor(QPalette::ToolTipBase, Qt::white);
-    darkPalette.setColor(QPalette::ToolTipText, Qt::white);
-    darkPalette.setColor(QPalette::Text, Qt::white);
-    darkPalette.setColor(QPalette::Button, QColor(53,53,53));
-    darkPalette.setColor(QPalette::ButtonText, Qt::white);
-    darkPalette.setColor(QPalette::BrightText, Qt::red);
-    darkPalette.setColor(QPalette::Link, QColor(42, 130, 218));
+    // Load advanced palette & style file
+    QFile styleFile(":stylesheets/xcnstyle");
+    styleFile.open(QFile::ReadOnly);
 
-    darkPalette.setColor(QPalette::Highlight, QColor(42, 130, 218));
-    darkPalette.setColor(QPalette::HighlightedText, Qt::black);
-    
-    qApp->setPalette(darkPalette);
-
-    qApp->setStyleSheet("QToolTip { color: #ffffff; background-color: #191919; border: 1px solid white; }");
-    qApp->setStyleSheet("QToolBar { background-color: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 black, stop: 1 #0a4200); border: 1px solid black; }");
+    // Apply the loaded style file
+    QString style(styleFile.readAll());
+    qApp->setStyleSheet(style);
 
     QString windowTitle = tr("Cryptonite") + " - ";
+
 #ifdef ENABLE_WALLET
     /* if compiled with wallet support, -disablewallet can still disable the wallet */
     bool enableWallet = !GetBoolArg("-disablewallet", false);
@@ -186,15 +189,6 @@ BitcoinGUI::BitcoinGUI(bool fIsTestnet, QWidget *parent) :
     progressBar = new QProgressBar();
     progressBar->setAlignment(Qt::AlignCenter);
     progressBar->setVisible(false);
-
-    // Override style sheet for progress bar for styles that have a segmented progress bar,
-    // as they make the text unreadable (workaround for issue #1071)
-    // See https://doc.qt.io/qt-5/gallery.html
-    QString curStyle = QApplication::style()->metaObject()->className();
-    if(curStyle == "QWindowsStyle" || curStyle == "QWindowsXPStyle")
-    {
-        progressBar->setStyleSheet("QProgressBar { background-color: #e8e8e8; border: 1px solid grey; border-radius: 7px; padding: 1px; text-align: center; } QProgressBar::chunk { background: QLinearGradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 #FF8000, stop: 1 orange); border-radius: 7px; margin: 0px; }");
-    }
 
     statusBar()->addWidget(progressBarLabel);
     statusBar()->addWidget(progressBar);

@@ -44,8 +44,12 @@
     </qresource>
     <qresource prefix="/images">
         <file alias="about">res/images/about.png</file>
+        <file alias="background">res/images/background.png</file>
         <file alias="splash">res/images/splash.png</file>
         <file alias="splash_testnet">res/images/splash_testnet.png</file>
+    </qresource>
+    <qresource prefix="/stylesheets">
+        <file alias="xcnstyle">res/stylesheets/xcnstyle.css</file>
     </qresource>
     <qresource prefix="/movies">
         <file alias="spinner-000">res/movies/spinner-000.png</file>
