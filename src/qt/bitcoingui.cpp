@@ -395,7 +395,7 @@ void BitcoinGUI::createToolBars()
             spacerWidget2->setVisible(true);
         toolbar->setIconSize(QSize(60, 35));
         toolbar->setMovable(true);
-	toolbar->setFloatable(false);
+        toolbar->setFloatable(false);
         toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
         toolbar->addWidget(spacerWidget);
         toolbar->addAction(overviewAction);
