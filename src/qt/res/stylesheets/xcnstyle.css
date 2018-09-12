@@ -1,3 +1,18 @@
+QFrame#frame_Balance{
+  Background-color:rgba(20,20,20,85%);
+}
+QFrame#frame_Recent{
+  Background-color:rgba(20,20,20,85%);
+}
+QFrame#frame_SpendLimit{
+  Background-color:rgba(20,20,20,85%);
+}
+QFrame#frame_ReceiveTop{
+  Background-color:rgba(20,20,20,85%);
+}
+QFrame#frame_ReceiveBottom{
+  Background-color:rgba(20,20,20,85%);
+}
 QToolTip{
   color:#ffffff;
   background-color:palette(base);

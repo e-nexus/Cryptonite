@@ -34,7 +34,7 @@ public:
     void showOutOfSyncWarning(bool fShow);
 
 public Q_SLOTS:
-    void setBalance(qint64 balance, qint64 unconfirmedBalance, qint64 immatureBalance);
+    void setBalance(qint64 balance, qint64 unconfirmedBalance, qint64 currentInstantAcc);
 
 Q_SIGNALS:
     void transactionClicked(const QModelIndex &index);
@@ -45,7 +45,7 @@ private:
     WalletModel *walletModel;
     qint64 currentBalance;
     qint64 currentUnconfirmedBalance;
-    qint64 currentImmatureBalance;
+    qint64 currentInstantAcc;
 
     TxViewDelegate *txdelegate;
     TransactionFilterProxy *filter;
