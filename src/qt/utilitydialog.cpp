@@ -15,8 +15,10 @@
 #include "init.h"
 #include "util.h"
 
+#include <QDesktopWidget>
 #include <QCloseEvent>
 #include <QLabel>
+#include <QSettings>
 #include <QVBoxLayout>
 
 /** "About" dialog box */
@@ -63,7 +65,11 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent) :
     ui(new Ui::HelpMessageDialog)
 {
     ui->setupUi(this);
-    GUIUtil::restoreWindowGeometry("nHelpMessageDialogWindow", this->size(), this);
+    QSettings settings;
+    if (!restoreGeometry(settings.value("HelpMessageDialogWindow").toByteArray())) {
+        // Restore failed (perhaps missing setting), center the window
+        move(QApplication::desktop()->availableGeometry().center() - frameGeometry().center());
+    }
 
     header = tr("Cryptonite") + " " + tr("version") + " " +
         QString::fromStdString(FormatFullVersion()) + "\n\n" +
@@ -87,7 +93,8 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent) :
 
 HelpMessageDialog::~HelpMessageDialog()
 {
-    GUIUtil::saveWindowGeometry("nHelpMessageDialogWindow", this);
+    QSettings settings;
+    settings.setValue("HelpMessageDialogWindow", saveGeometry());
     delete ui;
 }
 

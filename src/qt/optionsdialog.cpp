@@ -19,10 +19,12 @@
 #include "wallet.h"
 #include "txdb.h" // for -dbcache defaults
 
+#include <QDesktopWidget>
 #include <QDir>
 #include <QIntValidator>
 #include <QLocale>
 #include <QMessageBox>
+#include <QSettings>
 #include <QTimer>
 
 OptionsDialog::OptionsDialog(QWidget *parent) :
@@ -33,7 +35,11 @@ OptionsDialog::OptionsDialog(QWidget *parent) :
     fProxyIpValid(true)
 {
     ui->setupUi(this);
-    GUIUtil::restoreWindowGeometry("nOptionsDialogWindow", this->size(), this);
+    QSettings settings;
+    if (!restoreGeometry(settings.value("OptionsDialogWindow").toByteArray())) {
+        // Restore failed (perhaps missing setting), center the window
+        move(QApplication::desktop()->availableGeometry().center() - frameGeometry().center());
+    }
 
     /* Main elements init */
     ui->databaseCache->setMinimum(nMinDbCache);
@@ -101,7 +107,8 @@ OptionsDialog::OptionsDialog(QWidget *parent) :
 
 OptionsDialog::~OptionsDialog()
 {
-    GUIUtil::saveWindowGeometry("nOptionsDialogWindow", this);
+    QSettings settings;
+    settings.setValue("OptionsDialogWindow", saveGeometry());
     delete ui;
 }
 

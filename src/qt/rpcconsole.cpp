@@ -21,8 +21,10 @@
 #endif
 #include <openssl/crypto.h>
 
+#include <QDesktopWidget>
 #include <QKeyEvent>
 #include <QScrollBar>
+#include <QSettings>
 #include <QThread>
 #include <QTime>
 
@@ -201,7 +203,11 @@ RPCConsole::RPCConsole(QWidget *parent) :
     cachedNodeid(-1)
 {
     ui->setupUi(this);
-    GUIUtil::restoreWindowGeometry("nRPCConsoleWindow", this->size(), this);
+    QSettings settings;
+    if (!restoreGeometry(settings.value("RPCConsoleWindowGeometry").toByteArray())) {
+        // Restore failed (perhaps missing setting), center the window
+        move(QApplication::desktop()->availableGeometry().center() - frameGeometry().center());
+    }
 
 #ifndef Q_OS_MAC
     ui->openDebugLogfileButton->setIcon(QIcon(":/icons/export"));
@@ -234,7 +240,8 @@ RPCConsole::RPCConsole(QWidget *parent) :
 
 RPCConsole::~RPCConsole()
 {
-    GUIUtil::saveWindowGeometry("nRPCConsoleWindow", this);
+    QSettings settings;
+    settings.setValue("RPCConsoleWindowGeometry", saveGeometry());
     Q_EMIT stopExecutor();
     delete ui;
 }
