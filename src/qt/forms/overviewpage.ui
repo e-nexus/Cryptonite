@@ -401,7 +401,7 @@
             <x>120</x>
             <y>160</y>
             <width>161</width>
-            <height>20</height>
+            <height>16</height>
            </rect>
           </property>
           <property name="font">
@@ -423,33 +423,28 @@
          <widget class="QLabel" name="label_LimitIncrease">
           <property name="geometry">
            <rect>
-            <x>100</x>
-            <y>90</y>
-            <width>171</width>
-            <height>51</height>
+            <x>10</x>
+            <y>80</y>
+            <width>271</width>
+            <height>41</height>
            </rect>
+          </property>
+          <property name="font">
+           <font>
+            <italic>true</italic>
+           </font>
           </property>
           <property name="text">
-           <string> Number of blocks until 
- limit can be increased.</string>
-          </property>
-         </widget>
-         <widget class="QLCDNumber" name="timer_LimitIncrease">
-          <property name="geometry">
-           <rect>
-            <x>30</x>
-            <y>100</y>
-            <width>51</width>
-            <height>31</height>
-           </rect>
+           <string> Once set, the limit cannot be increased for 
+ 150 blocks (approx 2.5hrs).</string>
           </property>
          </widget>
          <widget class="QLabel" name="label_Instant">
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>140</y>
-            <width>121</width>
+            <y>130</y>
+            <width>131</width>
             <height>17</height>
            </rect>
           </property>
@@ -460,16 +455,16 @@
            </font>
           </property>
           <property name="text">
-           <string>Instant Trusted:</string>
+           <string>Maximum Instant:</string>
           </property>
          </widget>
          <widget class="QLabel" name="label_InstantAcc">
           <property name="geometry">
            <rect>
-            <x>140</x>
-            <y>140</y>
-            <width>141</width>
-            <height>20</height>
+            <x>150</x>
+            <y>130</y>
+            <width>131</width>
+            <height>16</height>
            </rect>
           </property>
           <property name="font">
@@ -503,10 +498,9 @@
            </font>
           </property>
           <property name="text">
-           <string> Restrict the amount of XCN that can be 
- sent from your wallet per block. Setting 
- this to your balance / 150 will enable 
- trusted instant transactions.</string>
+           <string> Restrict the amount of XCN that can be sent from your 
+ wallet per block. Setting this below the maximum instant 
+ value will enable instant transactions.</string>
           </property>
          </widget>
         </widget>
