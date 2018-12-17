@@ -206,6 +206,7 @@ case $host in
      AC_CHECK_LIB([userenv],      [main],, AC_MSG_ERROR(lib missing))
      AC_CHECK_LIB([dwmapi],      [main],, AC_MSG_ERROR(lib missing))
      AC_CHECK_LIB([pcre2-16],      [main],, AC_MSG_ERROR(lib missing))
+     AC_CHECK_LIB([wtsapi32],      [main],, AC_MSG_ERROR(lib missing))
 
      AX_CHECK_LINK_FLAG([[-static]],[LDFLAGS="$LDFLAGS -static"])
      AX_CHECK_LINK_FLAG([[-static-libgcc]],[LDFLAGS="$LDFLAGS -static-libgcc"])
