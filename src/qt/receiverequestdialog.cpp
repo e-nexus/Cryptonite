@@ -15,6 +15,7 @@
 #include <QDrag>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QAction>
 #include <QPixmap>
 #if QT_VERSION < 0x050000
 #include <QUrl>
@@ -34,10 +35,11 @@ QRImageWidget::QRImageWidget(QWidget *parent):
     setContextMenuPolicy(Qt::ActionsContextMenu);
 
     QAction *saveImageAction = new QAction(tr("&Save Image..."), this);
-    connect(saveImageAction, SIGNAL(triggered()), this, SLOT(saveImage()));
+    connect(saveImageAction, &QAction::triggered, this, &QRImageWidget::saveImage);
     addAction(saveImageAction);
+
     QAction *copyImageAction = new QAction(tr("&Copy Image"), this);
-    connect(copyImageAction, SIGNAL(triggered()), this, SLOT(copyImage()));
+    connect(copyImageAction, &QAction::triggered, this, &QRImageWidget::copyImage);
     addAction(copyImageAction);
 }
 

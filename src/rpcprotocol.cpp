@@ -13,7 +13,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -23,6 +23,7 @@
 using namespace std;
 using namespace boost;
 using namespace boost::asio;
+using namespace boost::placeholders;
 using namespace json_spirit;
 
 //

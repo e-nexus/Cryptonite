@@ -29,6 +29,8 @@
 
 #include <iostream>
 
+#include <boost/bind/placeholders.hpp>
+
 #include <QApplication>
 #include <QDateTime>
 #include <QDesktopWidget>
@@ -56,6 +58,8 @@
 #else
 #include <QUrlQuery>
 #endif
+
+using namespace boost::placeholders;
 
 const QString BitcoinGUI::DEFAULT_WALLET = "~Default";
 

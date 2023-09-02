@@ -1,6 +1,6 @@
 include $(top_srcdir)/src/Makefile.include
 
-AM_CPPFLAGS += -I$(top_srcdir)/src -std=c++11 -D__STDC_LIMIT_MACROS \
+AM_CPPFLAGS += -I$(top_srcdir)/src -std=c++17 -D__STDC_LIMIT_MACROS \
   -I$(top_srcdir)/src/qt \
   -I$(top_builddir)/src/qt \
   $(PROTOBUF_CFLAGS) \

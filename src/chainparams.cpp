@@ -105,8 +105,9 @@ public:
         if(hashGenesisBlock != uint256("0x000009a460ccc429ac6e53c91c6ed2d96697884b8b656a903042faff8971c5aa"))
 		MineGenesis(genesis);
 
+
         vSeeds.push_back(CDNSSeedData("explorer.cryptonite.info", "explorer.cryptonite.info"));
-	vSeeds.push_back(CDNSSeedData("xcn.suprnova.cc", "xcn.suprnova.cc"));
+	    vSeeds.push_back(CDNSSeedData("xcn.suprnova.cc", "xcn.suprnova.cc"));
         vSeeds.push_back(CDNSSeedData("explorer.digicent.org", "explorer.digicent.org"));
 
         //sa ToDO: Review. The convert_to_container stuff was added as a quick fix to get it building in c++11. it should work

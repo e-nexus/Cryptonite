@@ -13,6 +13,7 @@
 #include "guiutil.h"
 #include "intro.h"
 #include "optionsmodel.h"
+#include "scheduler.h"
 #include "splashscreen.h"
 #include "utilitydialog.h"
 #ifdef ENABLE_WALLET
@@ -46,13 +47,6 @@
 
 #if defined(QT_STATICPLUGIN)
 #include <QtPlugin>
-#if QT_VERSION < 0x050000
-Q_IMPORT_PLUGIN(qcncodecs)
-Q_IMPORT_PLUGIN(qjpcodecs)
-Q_IMPORT_PLUGIN(qtwcodecs)
-Q_IMPORT_PLUGIN(qkrcodecs)
-Q_IMPORT_PLUGIN(qtaccessiblewidgets)
-#else
 #if QT_VERSION < 0x050400
 Q_IMPORT_PLUGIN(AccessibleFactory)
 Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
@@ -67,8 +61,9 @@ Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 Q_IMPORT_PLUGIN(QXcbIntegrationPlugin);
 #endif
 
-#if QT_VERSION < 0x050000
-#include <QTextCodec>
+#if defined(QT_QPA_PLATFORM_XCB)
+#include <QtPlugin>
+Q_IMPORT_PLUGIN(QXcbIntegrationPlugin);
 #endif
 
 // Declare meta types used for QMetaObject::invokeMethod

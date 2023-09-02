@@ -26,6 +26,7 @@
 #include <QTreeWidgetItem>
 
 using namespace std;
+
 QList<qint64> CoinControlDialog::payAmounts;
 
 CoinControlDialog::CoinControlDialog(QWidget *parent) :
@@ -649,7 +650,7 @@ void CoinControlDialog::updateView()
     map<QString, vector<COutput> > mapCoins;
     model->listCoins(mapCoins);
 
-    for (std::pair<QString, vector<COutput>> coins : mapCoins)
+    for (std::pair<QString, std::vector<COutput>> coins : mapCoins)
     {
         QTreeWidgetItem *itemWalletAddress = new QTreeWidgetItem();
         itemWalletAddress->setCheckState(COLUMN_CHECKBOX, Qt::Unchecked);

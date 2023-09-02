@@ -3,7 +3,6 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "clientmodel.h"
-
 #include "guiconstants.h"
 #include "peertablemodel.h"
 
@@ -14,11 +13,15 @@
 #include "net.h"
 #include "ui_interface.h"
 
+#include <boost/bind/placeholders.hpp>
+
 #include <stdint.h>
 
 #include <QDateTime>
 #include <QDebug>
 #include <QTimer>
+
+using namespace boost::placeholders;
 
 static const int64_t nClientStartupTime = GetTime();
 

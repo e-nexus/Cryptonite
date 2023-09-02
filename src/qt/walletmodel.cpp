@@ -20,9 +20,15 @@
 
 #include <stdint.h>
 
+#include <boost/bind.hpp>
+#include <boost/function.hpp>
+#include <boost/bind/placeholders.hpp>
+
 #include <QDebug>
 #include <QSet>
 #include <QTimer>
+
+using namespace boost::placeholders;
 
 WalletModel::WalletModel(CWallet *wallet, OptionsModel *optionsModel, QObject *parent) :
     QObject(parent), wallet(wallet), optionsModel(optionsModel), addressTableModel(0),
@@ -579,10 +585,17 @@ void WalletModel::loadReceiveRequests(std::vector<std::string>& vReceiveRequests
 {
     LOCK(wallet->cs_wallet);
     for (const std::pair<CTxDestination, CAddressBookData>& item : wallet->mapAddressBook)
+    {
         for (const std::pair<std::string, std::string>& item2 : item.second.destdata)
-            if (item2.first.size() > 2 && item2.first.substr(0,2) == "rr") // receive request
+        {
+            if (item2.first.size() > 2 && item2.first.substr(0,2) == "rr")  // receive request
+            {
                 vReceiveRequests.push_back(item2.second);
+            }
+        }
+    }
 }
+
 
 bool WalletModel::saveReceiveRequest(const std::string &sAddress, const int64_t nId, const std::string &sRequest)
 {
