@@ -54,7 +54,6 @@ Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 #endif
 #endif
-#endif
 
 #if defined(QT_QPA_PLATFORM_XCB)
 #include <QtPlugin>
