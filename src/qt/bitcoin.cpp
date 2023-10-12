@@ -7,7 +7,6 @@
 #endif
 
 #include "bitcoingui.h"
-
 #include "clientmodel.h"
 #include "guiconstants.h"
 #include "guiutil.h"
@@ -16,6 +15,7 @@
 #include "scheduler.h"
 #include "splashscreen.h"
 #include "utilitydialog.h"
+
 #ifdef ENABLE_WALLET
 #include "paymentserver.h"
 #include "walletmodel.h"
@@ -27,13 +27,13 @@
 #include "scheduler.h"
 #include "ui_interface.h"
 #include "util.h"
+
 #ifdef ENABLE_WALLET
 #include "wallet.h"
 #endif
 
 #include <memory>
 #include <stdint.h>
-
 #include <boost/filesystem/operations.hpp>
 #include <QApplication>
 #include <QDebug>
@@ -41,23 +41,13 @@
 #include <QLocale>
 #include <QMessageBox>
 #include <QSettings>
+#include <QThread>
 #include <QTimer>
 #include <QTranslator>
-#include <QThread>
 
 #if defined(QT_STATICPLUGIN)
 #include <QtPlugin>
-#if QT_VERSION < 0x050400
-Q_IMPORT_PLUGIN(AccessibleFactory)
 Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
-#else
-Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
-#endif
-#endif
-
-#if defined(QT_QPA_PLATFORM_XCB)
-#include <QtPlugin>
-Q_IMPORT_PLUGIN(QXcbIntegrationPlugin);
 #endif
 
 #if defined(QT_QPA_PLATFORM_XCB)
@@ -470,25 +460,17 @@ int main(int argc, char *argv[])
 
     // Do not refer to data directory yet, this can be overridden by Intro::pickDataDirectory
 
-    /// 2. Basic Qt initialization (not dependent on parameters or configuration)
-#if QT_VERSION < 0x050000
-    // Internal string conversion is all UTF-8
-    QTextCodec::setCodecForTr(QTextCodec::codecForName("UTF-8"));
-    QTextCodec::setCodecForCStrings(QTextCodec::codecForTr());
-#endif
+    // Enable high-dpi features
+    QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+    QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 
+    #ifdef Q_OS_MAC
+        QApplication::setAttribute(Qt::AA_DontShowIconsInMenus);
+    #endif
+
+    /// 2. Basic Qt initialization (not dependent on parameters or configuration)
     Q_INIT_RESOURCE(bitcoin);
     BitcoinApplication app(argc, argv);
-#if QT_VERSION > 0x050100
-    // Generate high-dpi pixmaps
-    QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
-#endif
-#if QT_VERSION >= 0x050600
-    QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-#endif
-#ifdef Q_OS_MAC
-    QApplication::setAttribute(Qt::AA_DontShowIconsInMenus);
-#endif
 
     // Register meta types used for QMetaObject::invokeMethod
     qRegisterMetaType< bool* >();

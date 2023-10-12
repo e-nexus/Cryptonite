@@ -3,17 +3,20 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "bitcoingui.h"
-
 #include "bitcoinunits.h"
 #include "clientmodel.h"
+#include "core.h"
 #include "guiconstants.h"
 #include "guiutil.h"
+#include "init.h"
 #include "notificator.h"
 #include "openuridialog.h"
 #include "optionsdialog.h"
 #include "optionsmodel.h"
 #include "rpcconsole.h"
 #include "utilitydialog.h"
+#include "ui_interface.h"
+
 #ifdef ENABLE_WALLET
 #include "walletframe.h"
 #include "walletmodel.h"
@@ -23,14 +26,9 @@
 #include "macdockiconhandler.h"
 #endif
 
-#include "init.h"
-#include "ui_interface.h"
-#include "core.h"
-
 #include <iostream>
 
 #include <boost/bind/placeholders.hpp>
-
 #include <QApplication>
 #include <QDateTime>
 #include <QDesktopWidget>
@@ -51,13 +49,7 @@
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <QStyleFactory>
-
-#if QT_VERSION < 0x050000
-#include <QUrl>
-#include <QTextDocument>
-#else
 #include <QUrlQuery>
-#endif
 
 using namespace boost::placeholders;
 
@@ -93,7 +85,6 @@ BitcoinGUI::BitcoinGUI(bool fIsTestnet, QWidget *parent) :
     darkPalette.setColor(QPalette::ButtonText, Qt::white);
     darkPalette.setColor(QPalette::BrightText, Qt::red);
     darkPalette.setColor(QPalette::Link, QColor(42, 130, 218));
-
     darkPalette.setColor(QPalette::Highlight, QColor(42, 130, 218));
     darkPalette.setColor(QPalette::HighlightedText, Qt::black);
     
@@ -202,13 +193,24 @@ BitcoinGUI::BitcoinGUI(bool fIsTestnet, QWidget *parent) :
     progressBar->setAlignment(Qt::AlignCenter);
     progressBar->setVisible(false);
 
-    // Override style sheet for progress bar for styles that have a segmented progress bar,
-    // as they make the text unreadable (workaround for issue #1071)
-    // See https://qt-project.org/doc/qt-4.8/gallery.html
     QString curStyle = QApplication::style()->metaObject()->className();
-    if(curStyle == "QWindowsStyle" || curStyle == "QWindowsXPStyle")
+
+    if (curStyle == "QWindowsStyle" || curStyle == "QWindowsXPStyle")
     {
-        progressBar->setStyleSheet("QProgressBar { background-color: #e8e8e8; border: 1px solid grey; border-radius: 7px; padding: 1px; text-align: center; } QProgressBar::chunk { background: QLinearGradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 #FF8000, stop: 1 orange); border-radius: 7px; margin: 0px; }");
+        QString progressBarStyleSheet = "QProgressBar {"
+                                      "    background-color: #e8e8e8;"
+                                      "    border: 1px solid grey;"
+                                      "    border-radius: 7px;"
+                                      "    padding: 1px;"
+                                      "    text-align: center;"
+                                      "}"
+                                      "QProgressBar::chunk {"
+                                      "    background: QLinearGradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 #FF8000, stop: 1 orange);"
+                                      "    border-radius: 7px;"
+                                      "    margin: 0px;"
+                                      "}";
+
+        progressBar->setStyleSheet(progressBarStyleSheet);
     }
 
     statusBar()->addWidget(progressBarLabel);
