@@ -91,60 +91,59 @@ bool CBlockTreeDB::ReadFlag(const std::string &name, bool &fValue) {
     return true;
 }
 
-bool CBlockTreeDB::LoadBlockIndexGuts()
-{ 
-    //printf("Load guts\n");
+bool CBlockTreeDB::LoadBlockIndexGuts() {
     leveldb::Iterator *pcursor = NewIterator();
-    CDataStream ssKeySet(SER_DISK, CLIENT_VERSION);
-    ssKeySet << make_pair('b', uint256(0));
+    CDataStream ssKeySet(SER_DISK, CLIENT_VERSION), ssKey(SER_DISK, CLIENT_VERSION), ssValue(SER_DISK, CLIENT_VERSION);
+    ssKeySet << std::make_pair('b', uint256(0));
     pcursor->Seek(ssKeySet.str());
 
-    // Load mapBlockIndex
     while (pcursor->Valid()) {
         boost::this_thread::interruption_point();
-        try {
-            leveldb::Slice slKey = pcursor->key();
-            CDataStream ssKey(slKey.data(), slKey.data()+slKey.size(), SER_DISK, CLIENT_VERSION);
-            char chType;
-            ssKey >> chType;
-            if (chType == 'b') {
-                leveldb::Slice slValue = pcursor->value();
-                CDataStream ssValue(slValue.data(), slValue.data()+slValue.size(), SER_DISK, CLIENT_VERSION);
-                CDiskBlockIndex diskindex;
+        
+        // Reusing the streams by clearing them for new data
+        ssKey.clear();
+        ssValue.clear();
+        
+        leveldb::Slice slKey = pcursor->key();
+        leveldb::Slice slValue = pcursor->value();
+        
+        ssKey.reserve(slKey.size());
+        ssKey.write(slKey.data(), slKey.size());
+        char chType;
+        ssKey >> chType;
+
+        if (chType == 'b') {
+            ssValue.reserve(slValue.size());
+            ssValue.write(slValue.data(), slValue.size());
+            CDiskBlockIndex diskindex;
+
+            try {
                 ssValue >> diskindex;
-
-                if (!diskindex.CheckIndex()) {
-                    error("LoadBlockIndex() : CheckIndex failed: %s", diskindex.GetBlockHash().ToString().c_str());
-		    printf("fail\n");
-                    pcursor->Next();
-                    continue;
-                }
-
-                // Construct block index object
-		CBlockIndex* pindexNew = InsertBlockIndex(diskindex.GetBlockHash(), diskindex.GetBlockHeader());
-                pindexNew->nFile          = diskindex.nFile;
-                pindexNew->nDataPos       = diskindex.nDataPos;
-                pindexNew->nUndoPos       = diskindex.nUndoPos;
-                pindexNew->nStatus        = diskindex.nStatus;
-                pindexNew->nTx            = diskindex.nTx;
-
-		//printf("%d %ld %ld %ld\n", diskindex.nVersion, diskindex.nHeight, diskindex.nNonce, diskindex.nTime);
-		//printf("%s %s\n", diskindex.hashMerkleRoot.GetHex().c_str(), diskindex.hashAccountRoot.GetHex().c_str());
-	
-		//pindexNew->nHeight = 0;
-		//printf("Foo: %s\n", pindexNew->GetBlockHeader().GetHash().GetHex().c_str());
-                pcursor->Next();
-            } else {
-                break; // if shutdown requested or finished loading block index
+            } catch (std::exception &e) {
+                delete pcursor;
+                return error("%s : Deserialize or I/O error - %s", __PRETTY_FUNCTION__, e.what());
             }
-        } catch (std::exception &e) {
-            return error("%s : Deserialize or I/O error - %s", __PRETTY_FUNCTION__, e.what());
+
+            if (!diskindex.CheckIndex()) {
+                error("LoadBlockIndex() : CheckIndex failed: %s", diskindex.GetBlockHash().ToString().c_str());
+                pcursor->Next();
+                continue;
+            }
+
+            CBlockIndex* pindexNew = InsertBlockIndex(diskindex.GetBlockHash(), diskindex.GetBlockHeader());
+            if (pindexNew) { // Check for null pointer
+                pindexNew->nFile = diskindex.nFile;
+                pindexNew->nDataPos = diskindex.nDataPos;
+                pindexNew->nUndoPos = diskindex.nUndoPos;
+                pindexNew->nStatus = diskindex.nStatus;
+                pindexNew->nTx = diskindex.nTx;
+            }
+        } else {
+            break; // Finished loading block index
         }
+        pcursor->Next();
     }
-    delete pcursor;
-
-    //now that all blocks are loaded it is possible to actually verify proof of work.
-    //which is done by caller
-
+    
+    delete pcursor; // Always free resources
     return true;
 }
