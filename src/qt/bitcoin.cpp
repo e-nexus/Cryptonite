@@ -118,20 +118,12 @@ static void initTranslations(QTranslator &qtTranslatorBase, QTranslator &qtTrans
 }
 
 /* qDebug() message handler --> debug.log */
-#if QT_VERSION < 0x050000
-void DebugMessageHandler(QtMsgType type, const char *msg)
-{
-    Q_UNUSED(type);
-    LogPrint("qt", "GUI: %s\n", msg);
-}
-#else
 void DebugMessageHandler(QtMsgType type, const QMessageLogContext& context, const QString &msg)
 {
     Q_UNUSED(type);
     Q_UNUSED(context);
     LogPrint("qt", "GUI: %s\n", qPrintable(msg));
 }
-#endif
 
 /** Class encapsulating Bitcoin Core startup and shutdown.
  * Allows running startup and shutdown in a different thread from the UI thread.
@@ -558,14 +550,13 @@ int main(int argc, char *argv[])
 #endif
 
     /// 9. Main GUI initialization
+
     // Install global event filter that makes sure that long tooltips can be word-wrapped
     app.installEventFilter(new GUIUtil::ToolTipToRichTextFilter(TOOLTIP_WRAP_THRESHOLD, &app));
+
     // Install qDebug() message handler to route to debug.log
-#if QT_VERSION < 0x050000
-    qInstallMsgHandler(DebugMessageHandler);
-#else
     qInstallMessageHandler(DebugMessageHandler);
-#endif
+    
     // Load GUI settings from QSettings
     app.createOptionsModel();
 
