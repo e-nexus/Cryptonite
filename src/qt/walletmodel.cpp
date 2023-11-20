@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/function.hpp>
 #include <boost/bind/placeholders.hpp>
 
