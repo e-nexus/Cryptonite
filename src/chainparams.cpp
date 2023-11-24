@@ -106,7 +106,7 @@ public:
 		MineGenesis(genesis);
 
 
-        vSeeds.emplace_back("node.cryptonite.info", "node.cryptonite.info");
+        vSeeds.emplace_back("dnsseed.cryptonite.info", "dnsseed.cryptonite.info");
         // vSeeds.emplace_back("xcn.suprnova.cc", "xcn.suprnova.cc");
         // vSeeds.emplace_back("explorer.digicent.org", "explorer.digicent.org");
 
