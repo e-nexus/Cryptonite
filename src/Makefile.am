@@ -1,6 +1,6 @@
 include Makefile.include
 
-AM_CPPFLAGS += -I$(builddir) -fpermissive -ffloat-store -std=c++11 -D__STDC_LIMIT_MACROS -D__USE_MINGW_ANSI_STDIO
+AM_CPPFLAGS += -I$(builddir) -fpermissive -ffloat-store -std=c++17 -D__STDC_LIMIT_MACROS -D__USE_MINGW_ANSI_STDIO
 
 noinst_LIBRARIES = \
   libcryptonite_server.a \

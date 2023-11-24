@@ -14,6 +14,8 @@
 
 #include <stdarg.h>
 
+#include <cstdlib>
+
 #ifndef WIN32
 // for posix_fallocate
 #ifdef __linux_
@@ -58,7 +60,9 @@
 #endif
 
 #include <io.h> /* for _commit */
-#include <shlobj.h>
+//  #include "shlobj.h"
+#define CSIDL_APPDATA 0x001a
+
 #endif
 
 #include <boost/algorithm/string/case_conv.hpp> // for to_lower()
@@ -81,7 +85,6 @@ namespace boost {
         std::string to_internal(const std::string&);
     }
 }
-
 
 using namespace std;
 
@@ -974,7 +977,7 @@ boost::filesystem::path GetDefaultDataDir()
     // Unix: ~/.bitcoin
 #ifdef WIN32
     // Windows
-    return GetSpecialFolderPath(CSIDL_APPDATA) / "Cryptonite";
+    return boost::filesystem::path(getenv("APPDATA")) / "Cryptonite";
 #else
     fs::path pathRet;
     char* pszHome = getenv("HOME");
@@ -1367,19 +1370,30 @@ std::string FormatSubVersion(const std::string& name, int nClientVersion, const 
 }
 
 #ifdef WIN32
-boost::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate)
+boost::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate = true)
 {
     namespace fs = boost::filesystem;
-
     char pszPath[MAX_PATH] = "";
 
-    if(SHGetSpecialFolderPathA(nullptr, pszPath, nFolder, fCreate))
-    {
-        return fs::path(pszPath);
+    const char* pPath = nullptr;
+    if (nFolder == CSIDL_APPDATA) {
+        pPath = getenv("APPDATA");
+    }
+    // Add other special folders here as needed...
+
+    if (pPath != nullptr) {
+        strncpy(pszPath, pPath, sizeof(pszPath));
+        pszPath[sizeof(pszPath) - 1] = '\0';
+    } else {
+        LogPrintf("getenv() failed, could not obtain requested path.\n");
+        return fs::path("");
     }
 
-    LogPrintf("SHGetSpecialFolderPathA() failed, could not obtain requested path.\n");
-    return fs::path("");
+    fs::path pathRet = fs::path(pszPath);
+    if(fCreate && !fs::exists(pathRet))
+        fs::create_directory(pathRet);
+
+    return pathRet;
 }
 #endif
 

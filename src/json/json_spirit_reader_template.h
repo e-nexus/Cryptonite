@@ -11,7 +11,7 @@
 
 //#define BOOST_SPIRIT_THREADSAFE  // uncomment for multithreaded use, requires linking to boost.thread
 
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/version.hpp>
 
 #if BOOST_VERSION >= 103800
@@ -29,6 +29,8 @@
     #include <boost/spirit/iterator/position_iterator.hpp>
     #define spirit_namespace boost::spirit
 #endif
+
+using namespace boost::placeholders;
 
 namespace json_spirit
 {

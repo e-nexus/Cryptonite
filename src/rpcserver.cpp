@@ -18,16 +18,18 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/shared_ptr.hpp>
 #include "json/json_spirit_writer_template.h"
 
+namespace fs = boost::filesystem;
 using namespace std;
 using namespace boost;
 using namespace boost::asio;
+using namespace boost::placeholders;
 using namespace json_spirit;
 
 static std::string strRPCUserColonPass;
@@ -489,10 +491,10 @@ class AcceptedConnectionImpl : public AcceptedConnection
 {
 public:
     AcceptedConnectionImpl(
-            asio::io_service& io_service,
+            asio::any_io_executor executor,
             ssl::context &context,
             bool fUseSSL) :
-        sslStream(io_service, context),
+        sslStream(executor, context),
         _d(sslStream, fUseSSL),
         _stream(_d)
     {
@@ -539,8 +541,8 @@ static void RPCListen(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketA
                    ssl::context& context,
                    const bool fUseSSL)
 {
-    // Accept connection
-    AcceptedConnectionImpl<Protocol>* conn = new AcceptedConnectionImpl<Protocol>(acceptor->get_io_service(), context, fUseSSL);
+    // Pass the executor instead of the io_service
+    AcceptedConnectionImpl<Protocol>* conn = new AcceptedConnectionImpl<Protocol>(acceptor->get_executor(), context, fUseSSL);
 
     acceptor->async_accept(
             conn->sslStream.lowest_layer(),
@@ -639,14 +641,14 @@ void StartRPCThreads()
     {
         rpc_ssl_context->set_options(ssl::context::no_sslv2);
 
-        filesystem::path pathCertFile(GetArg("-rpcsslcertificatechainfile", "server.cert"));
-        if (!pathCertFile.is_complete()) pathCertFile = filesystem::path(GetDataDir()) / pathCertFile;
-        if (filesystem::exists(pathCertFile)) rpc_ssl_context->use_certificate_chain_file(pathCertFile.string());
+        fs::path pathCertFile(GetArg("-rpcsslcertificatechainfile", "server.cert"));
+        if (!pathCertFile.is_complete()) pathCertFile = fs::path(GetDataDir()) / pathCertFile;
+        if (fs::exists(pathCertFile)) rpc_ssl_context->use_certificate_chain_file(pathCertFile.string());
         else LogPrintf("ThreadRPCServer ERROR: missing server certificate file %s\n", pathCertFile.string());
 
-        filesystem::path pathPKFile(GetArg("-rpcsslprivatekeyfile", "server.pem"));
-        if (!pathPKFile.is_complete()) pathPKFile = filesystem::path(GetDataDir()) / pathPKFile;
-        if (filesystem::exists(pathPKFile)) rpc_ssl_context->use_private_key_file(pathPKFile.string(), ssl::context::pem);
+        fs::path pathPKFile(GetArg("-rpcsslprivatekeyfile", "server.pem"));
+        if (!pathPKFile.is_complete()) pathPKFile = fs::path(GetDataDir()) / pathPKFile;
+        if (fs::exists(pathPKFile)) rpc_ssl_context->use_private_key_file(pathPKFile.string(), ssl::context::pem);
         else LogPrintf("ThreadRPCServer ERROR: missing server private key file %s\n", pathPKFile.string());
 
         string strCiphers = GetArg("-rpcsslciphers", "TLSv1.2+HIGH:TLSv1+HIGH:!SSLv2:!aNULL:!eNULL:!3DES:@STRENGTH");

@@ -33,9 +33,7 @@ SendCoinsDialog::SendCoinsDialog(QWidget *parent) :
     ui->sendButton->setIcon(QIcon());
 #endif
 
-#if QT_VERSION >= 0x040700
     ui->msgLabel->setPlaceholderText(tr("Enter a message to include with this transaction"));
-#endif
 
     GUIUtil::setupAddressWidget(ui->lineEditCoinControlChange, this);
 

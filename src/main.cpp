@@ -28,6 +28,9 @@
 
 #include <gmpxx.h>
 
+#include <map>
+
+namespace fs = boost::filesystem;
 using namespace std;
 using namespace boost;
 
@@ -97,10 +100,9 @@ static std::map<uint256, CBlock*> mapUnindexed;
 const string strMessageMagic = "Cryptonite Signed Message:\n";
 
 // Internal stuff
-namespace {
 struct CBlockIndexWorkComparator
 {
-    bool operator()(CBlockIndex *pa, CBlockIndex *pb) {
+    bool operator()(CBlockIndex *pa, CBlockIndex *pb) const {
         // First sort by most total work, ...
         if (pa->nChainWork > pb->nChainWork) return false;
         if (pa->nChainWork < pb->nChainWork) return true;
@@ -132,7 +134,6 @@ void printAffairs(){
 	printf("validSize: %ld\n", setBlockIndexValid.size());
 }
 
-
 CCriticalSection cs_LastBlockFile;
 CBlockFileInfo infoLastBlockFile;
 int nLastBlockFile = 0;
@@ -147,11 +148,8 @@ uint32_t nBlockSequenceId = 1;
 // them, if processing happens afterwards. Protected by cs_main.
 map<uint256, NodeId> mapBlockSource;
 
-}
-
 /** Show progress e.g. for load */
 boost::signals2::signal<void (const std::string &title, int nProgress)> ShowProgress;
-
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -160,39 +158,44 @@ boost::signals2::signal<void (const std::string &title, int nProgress)> ShowProg
 
 // These functions dispatch to one or all registered wallets
 
+std::map<CWalletInterface*, boost::signals2::connection> connectionMap;
+
 namespace {
 struct CMainSignals {
-    // Notifies listeners of updated transaction data (passing hash, transaction, and optionally the block it is found in.
     boost::signals2::signal<void (const uint256 &, const CTransaction &, const CBlock *)> SyncTransaction;
-    // Notifies listeners of an erased transaction (currently disabled, requires transaction replacement).
     boost::signals2::signal<void (const uint256 &)> EraseTransaction;
-    // Notifies listeners of an updated transaction without new data (for now: a coinbase potentially becoming visible).
     boost::signals2::signal<void (const uint256 &)> UpdatedTransaction;
-    // Notifies listeners of a new active block chain.
     boost::signals2::signal<void (const CBlockLocator &)> SetBestChain;
-    // Notifies listeners about an inventory item being seen on the network.
     boost::signals2::signal<void (const uint256 &)> Inventory;
-    // Tells listeners to broadcast their data.
     boost::signals2::signal<void ()> Broadcast;
 } g_signals;
 }
 
 void RegisterWallet(CWalletInterface* pwalletIn) {
-    g_signals.SyncTransaction.connect(boost::bind(&CWalletInterface::SyncTransaction, pwalletIn, _1, _2, _3));
-    g_signals.EraseTransaction.connect(boost::bind(&CWalletInterface::EraseFromWallet, pwalletIn, _1));
-    g_signals.UpdatedTransaction.connect(boost::bind(&CWalletInterface::UpdatedTransaction, pwalletIn, _1));
-    g_signals.SetBestChain.connect(boost::bind(&CWalletInterface::SetBestChain, pwalletIn, _1));
-    g_signals.Inventory.connect(boost::bind(&CWalletInterface::Inventory, pwalletIn, _1));
-    g_signals.Broadcast.connect(boost::bind(&CWalletInterface::ResendWalletTransactions, pwalletIn));
+    connectionMap[pwalletIn] = g_signals.SyncTransaction.connect([=](const uint256 &hash, const CTransaction &tx, const CBlock *pblock) {
+        pwalletIn->SyncTransaction(hash, tx, pblock);
+    });
+    g_signals.EraseTransaction.connect([=](const uint256 &hash) {
+        pwalletIn->EraseFromWallet(hash);
+    });
+    g_signals.UpdatedTransaction.connect([=](const uint256 &hash) {
+        pwalletIn->UpdatedTransaction(hash);
+    });
+    g_signals.SetBestChain.connect([=](const CBlockLocator &locator) {
+        pwalletIn->SetBestChain(locator);
+    });
+    g_signals.Inventory.connect([=](const uint256 &hash) {
+        pwalletIn->Inventory(hash);
+    });
+    g_signals.Broadcast.connect([=]() {
+        pwalletIn->ResendWalletTransactions();
+    });
 }
 
 void UnregisterWallet(CWalletInterface* pwalletIn) {
-    g_signals.Broadcast.disconnect(boost::bind(&CWalletInterface::ResendWalletTransactions, pwalletIn));
-    g_signals.Inventory.disconnect(boost::bind(&CWalletInterface::Inventory, pwalletIn, _1));
-    g_signals.SetBestChain.disconnect(boost::bind(&CWalletInterface::SetBestChain, pwalletIn, _1));
-    g_signals.UpdatedTransaction.disconnect(boost::bind(&CWalletInterface::UpdatedTransaction, pwalletIn, _1));
-    g_signals.EraseTransaction.disconnect(boost::bind(&CWalletInterface::EraseFromWallet, pwalletIn, _1));
-    g_signals.SyncTransaction.disconnect(boost::bind(&CWalletInterface::SyncTransaction, pwalletIn, _1, _2, _3));
+    connectionMap[pwalletIn].disconnect();
+    // No lambdas should be passed to disconnect().
+    // Just call disconnect on the connection
 }
 
 void UnregisterAllWallets() {
@@ -207,6 +210,7 @@ void UnregisterAllWallets() {
 void SyncWithWallets(const uint256 &hash, const CTransaction &tx, const CBlock *pblock) {
     g_signals.SyncTransaction(hash, tx, pblock);
 }
+
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -1013,7 +1017,7 @@ void SystemResync(bool restart){
 	int64_t oldPid = GetArg("-pid",0LL);
 	//Impossible to check for exit via pid, so use lock
 
-    	boost::filesystem::path pathLockFile = GetDataDir() / ".lock";
+    	fs::path pathLockFile = GetDataDir() / ".lock";
     	static boost::interprocess::file_lock lock(pathLockFile.string().c_str());
     	while(!lock.try_lock()){
 	    MilliSleep(1000);
@@ -2536,7 +2540,7 @@ bool AbortNode(const std::string &strMessage) {
 
 bool CheckDiskSpace(uint64_t nAdditionalBytes)
 {
-    uint64_t nFreeBytesAvailable = filesystem::space(GetDataDir()).available;
+    uint64_t nFreeBytesAvailable = fs::space(GetDataDir()).available;
 
     // Check for nMinDiskSpace bytes (currently 50MB)
     if (nFreeBytesAvailable < nMinDiskSpace + nAdditionalBytes)
@@ -2549,8 +2553,8 @@ FILE* OpenDiskFile(const CDiskBlockPos &pos, const char *prefix, bool fReadOnly)
 {
     if (pos.IsNull())
         return nullptr;
-    boost::filesystem::path path = GetDataDir() / "blocks" / strprintf("%s%05u.dat", prefix, pos.nFile);
-    boost::filesystem::create_directories(path.parent_path());
+    fs::path path = GetDataDir() / "blocks" / strprintf("%s%05u.dat", prefix, pos.nFile);
+    fs::create_directories(path.parent_path());
     FILE* file = fopen(path.string().c_str(), "rb+");
     if (!file && !fReadOnly)
         file = fopen(path.string().c_str(), "wb+");

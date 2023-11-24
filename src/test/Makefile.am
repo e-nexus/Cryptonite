@@ -1,6 +1,6 @@
 include $(top_srcdir)/src/Makefile.include
 
-AM_CPPFLAGS += -I$(top_srcdir)/src -std=c++11 -fpermissive -ffloat-store -D__STDC_LIMIT_MACROS
+AM_CPPFLAGS += -I$(top_srcdir)/src -std=c++17 -fpermissive -ffloat-store -D__STDC_LIMIT_MACROS
 
 bin_PROGRAMS = test_bitcoin
 

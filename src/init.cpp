@@ -38,6 +38,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <openssl/crypto.h>
 
+namespace fs = boost::filesystem;
 using namespace std;
 using namespace boost;
 
@@ -139,7 +140,7 @@ void Shutdown()
     if (pwalletMain)
         bitdb.Flush(true);
 #endif
-    boost::filesystem::remove(GetPidFile());
+    fs::remove(GetPidFile());
     UnregisterAllWallets();
 #ifdef ENABLE_WALLET
     if (pwalletMain)
@@ -366,7 +367,7 @@ struct CImportingNow
     }
 };
 
-void ThreadImport(std::vector<boost::filesystem::path> vImportFiles)
+void ThreadImport(std::vector<fs::path> vImportFiles)
 {
     RenameThread("cryptonite-loadblk");
     ScheduleBatchPriority();
@@ -392,12 +393,12 @@ void ThreadImport(std::vector<boost::filesystem::path> vImportFiles)
     }
 
     // hardcoded $DATADIR/bootstrap.dat
-    filesystem::path pathBootstrap = GetDataDir() / "bootstrap.dat";
-    if (filesystem::exists(pathBootstrap)) {
+    fs::path pathBootstrap = GetDataDir() / "bootstrap.dat";
+    if (fs::exists(pathBootstrap)) {
         FILE *file = fopen(pathBootstrap.string().c_str(), "rb");
         if (file) {
             CImportingNow imp;
-            filesystem::path pathBootstrapOld = GetDataDir() / "bootstrap.dat.old";
+            fs::path pathBootstrapOld = GetDataDir() / "bootstrap.dat.old";
             LogPrintf("Importing bootstrap.dat...\n");
             LoadExternalBlockFile(file);
             RenameOver(pathBootstrap, pathBootstrapOld);
@@ -407,7 +408,7 @@ void ThreadImport(std::vector<boost::filesystem::path> vImportFiles)
     }
 
     // -loadblock=
-    for (boost::filesystem::path &path : vImportFiles) {
+    for (fs::path &path : vImportFiles) {
         FILE *file = fopen(path.string().c_str(), "rb");
         if (file) {
             CImportingNow imp;
@@ -640,11 +641,11 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     std::string strDataDir = GetDataDir().string();
 #ifdef ENABLE_WALLET
     // Wallet file must be a plain filename without a directory
-    if (strWalletFile != boost::filesystem::basename(strWalletFile) + boost::filesystem::extension(strWalletFile))
+    if (strWalletFile != fs::basename(strWalletFile) + fs::extension(strWalletFile))
         return InitError(strprintf(_("Wallet %s resides outside data directory %s"), strWalletFile, strDataDir));
 #endif
     // Make sure only a single Bitcoin process is using the data directory.
-    boost::filesystem::path pathLockFile = GetDataDir() / ".lock";
+    fs::path pathLockFile = GetDataDir() / ".lock";
     FILE* file = fopen(pathLockFile.string().c_str(), "a"); // empty lock file; created if it doesn't exist.
     if (file) fclose(file);
     static boost::interprocess::file_lock lock(pathLockFile.string().c_str());
@@ -684,12 +685,12 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         if (!bitdb.Open(GetDataDir()))
         {
             // try moving the database env out of the way
-            boost::filesystem::path pathDatabase = GetDataDir() / "database";
-            boost::filesystem::path pathDatabaseBak = GetDataDir() / strprintf("database.%d.bak", GetTime());
+            fs::path pathDatabase = GetDataDir() / "database";
+            fs::path pathDatabaseBak = GetDataDir() / strprintf("database.%d.bak", GetTime());
             try {
-                boost::filesystem::rename(pathDatabase, pathDatabaseBak);
+                fs::rename(pathDatabase, pathDatabaseBak);
                 LogPrintf("Moved old %s to %s. Retrying.\n", pathDatabase.string(), pathDatabaseBak.string());
-            } catch(boost::filesystem::filesystem_error &error) {
+            } catch(fs::filesystem_error &error) {
                  // failure is ok (well, not really, but it's not worse than what we started with)
             }
 
@@ -708,7 +709,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                 return false;
         }
 
-        if (filesystem::exists(GetDataDir() / strWalletFile))
+        if (fs::exists(GetDataDir() / strWalletFile))
         {
             CDBEnv::VerifyResult r = bitdb.Verify(strWalletFile, CWalletDB::Recover);
             if (r == CDBEnv::RECOVER_OK)
@@ -834,10 +835,10 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     fReindex = GetBoolArg("-reindex", false);
 
     // Create blocks dir
-    filesystem::path blocksDir = GetDataDir() / "blocks";
-    if (!filesystem::exists(blocksDir))
+    fs::path blocksDir = GetDataDir() / "blocks";
+    if (!fs::exists(blocksDir))
     {
-        filesystem::create_directories(blocksDir);
+        fs::create_directories(blocksDir);
     }
 
     // cache size calculations
@@ -1092,7 +1093,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     fLoading=false;
 
-    std::vector<boost::filesystem::path> vImportFiles;
+    std::vector<fs::path> vImportFiles;
     if (mapArgs.count("-loadblock"))
     {
         for (string strFile : mapMultiArgs["-loadblock"])

@@ -10,6 +10,13 @@ AC_INIT([Bitcoin Core],[_CLIENT_VERSION_MAJOR._CLIENT_VERSION_MINOR._CLIENT_VERS
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([build-aux/m4])
 LT_INIT([disable-shared])
+
+dnl Unless the user specified ARFLAGS, force it to be cr
+AC_ARG_VAR(ARFLAGS, [Flags for the archiver, defaults to <cr> if not set])
+if test "x${ARFLAGS+set}" != "xset"; then
+  ARFLAGS="cr"
+fi
+
 AC_CANONICAL_HOST
 AH_TOP([#ifndef BITCOIN_CONFIG_H])
 AH_TOP([#define BITCOIN_CONFIG_H])
@@ -67,6 +74,23 @@ AC_PATH_PROG(CCACHE,ccache)
 AC_PATH_PROG(XGETTEXT,xgettext)
 AC_PATH_PROG(HEXDUMP,hexdump)
 PKG_PROG_PKG_CONFIG
+
+# Define variables for each check
+AC_CHECK_HEADER([mm3dnow.h], [mm3dnow=yes], [mm3dnow=no])
+AC_CHECK_HEADER([avxintrin.h], [avx=yes], [avx=no])
+AC_CHECK_HEADER([avx2intrin.h], [avx2=yes], [avx2=no])
+AC_CHECK_HEADER([avx512fintrin.h], [avx512=yes], [avx512=no])
+AC_CHECK_HEADER([xopintrin.h], [xop=yes], [xop=no])
+AC_CHECK_HEADER([fma4intrin.h], [fma4=yes], [fma4=no])
+AC_CHECK_HEADER([fmaintrin.h], [fma3=yes], [fma3=no])
+AC_CHECK_HEADER([mmintrin.h], [mmx=yes], [mmx=no])
+AC_CHECK_HEADER([xmmintrin.h], [sse=yes], [sse=no])
+AC_CHECK_HEADER([emmintrin.h], [sse2=yes], [sse2=no])
+AC_CHECK_HEADER([pmmintrin.h], [sse3=yes], [sse3=no])
+AC_CHECK_HEADER([tmmintrin.h], [ssse3=yes], [ssse3=no])
+AC_CHECK_HEADER([smmintrin.h], [sse41=yes], [sse41=no])
+AC_CHECK_HEADER([nmmintrin.h], [sse42=yes], [sse42=no])
+AC_CHECK_HEADER([wmmintrin.h], [sse4=yes], [sse4=no])
 
 # Enable wallet
 AC_ARG_ENABLE([wallet],
@@ -155,7 +179,7 @@ if test "x$enable_debug" = xyes; then
     if test "x$GXX" = xyes; then
         CXXFLAGS="-g3 -rdynamic -O0 -DDEBUG"
     fi
-fi 
+fi
 
 ## TODO: Remove these hard-coded paths and flags. They are here for the sake of
 ##       compatibility with the legacy buildsystem.
@@ -199,6 +223,9 @@ case $host in
      AC_CHECK_LIB([userenv],      [main],, AC_MSG_ERROR(lib missing))
      AC_CHECK_LIB([dwmapi],      [main],, AC_MSG_ERROR(lib missing))
      AC_CHECK_LIB([pcre2-16],      [main],, AC_MSG_ERROR(lib missing))
+     AC_CHECK_LIB([wtsapi32],      [main],, AC_MSG_ERROR(lib missing))
+     AC_CHECK_LIB([zstd],      [main],, AC_MSG_ERROR(lib missing))
+     AC_CHECK_LIB([opengl32],      [main],, AC_MSG_ERROR(lib missing))
 
      AX_CHECK_LINK_FLAG([[-static]],[LDFLAGS="$LDFLAGS -static"])
      AX_CHECK_LINK_FLAG([[-static-libgcc]],[LDFLAGS="$LDFLAGS -static-libgcc"])
@@ -278,6 +305,22 @@ case $host in
    *)
      ;;
 esac
+
+AS_IF([echo "$CXXFLAGS" | grep -q -e "-march"],
+    [
+        AC_MSG_WARN([CXXFLAGS already contains -march flag; additional optimizations will not be checked])
+    ],
+    [
+        AX_CHECK_COMPILE_FLAG([-march=native],
+            [
+                CXXFLAGS="$CXXFLAGS -march=native"
+            ],
+            [
+                AC_MSG_WARN([Compiler optimizations specific to the native architecture cannot be used])
+            ]
+        )
+    ]
+)
 
 if test x$use_comparison_tool != xno; then
   AC_SUBST(JAVA_COMPARISON_TOOL, $use_comparison_tool)
@@ -779,3 +822,92 @@ AC_CONFIG_FILES([Makefile src/Makefile src/test/Makefile src/qt/Makefile src/qt/
 AC_CONFIG_FILES([qa/pull-tester/run-bitcoind-for-test.sh],[chmod +x qa/pull-tester/run-bitcoind-for-test.sh])
 AC_CONFIG_FILES([qa/pull-tester/build-tests.sh],[chmod +x qa/pull-tester/build-tests.sh])
 AC_OUTPUT
+
+detect_build_os() {
+    # Detect WSL
+    if grep -qEi "(Microsoft|WSL)" /proc/version &> /dev/null; then
+        # WSL specific commands
+        if test -f "/etc/os-release"; then
+            . /etc/os-release
+            linux_dist="${PRETTY_NAME:-$ID}"
+        else
+            # Fallback to lsb_release if /etc/os-release is not available
+            if type lsb_release >/dev/null 2>&1; then
+                linux_dist=$(lsb_release -d | cut -f2)
+            else
+                linux_dist="Unknown Linux"
+            fi
+        fi
+
+        echo "WSL (${linux_dist})"
+    elif [ "$(uname)" = "Linux" ]; then
+        # Regular Linux
+        if test -f "/etc/os-release"; then
+            . /etc/os-release
+            linux_dist="${PRETTY_NAME:-$ID}"
+        elif type lsb_release >/dev/null 2>&1; then
+            linux_dist=$(lsb_release -d | cut -f2)
+        else
+            linux_dist="Unknown Linux"
+        fi
+        echo "$linux_dist"
+    elif [ "$(uname)" = "Darwin" ]; then
+        # macOS
+        echo "macOS $(sw_vers -productVersion)"
+    else
+        # Unknown OS
+        echo "Unknown OS"
+    fi
+}
+
+# Store the result in a variable
+BUILD_OS=$(detect_build_os)
+
+# Define color variables using tput
+LIGHT_GREY=$(tput setaf 249)
+MEDIUM_GREY=$(tput setaf 245)
+DARK_GREY=$(tput setaf 235)
+NC=$(tput sgr0) # No Color
+
+# Start of the script
+echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"
+echo "${MEDIUM_GREY}============================ System Information ===========================${NC}"
+echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"
+echo "${MEDIUM_GREY}Target OS:                   ${LIGHT_GREY}$TARGET_OS${NC}"
+echo "${MEDIUM_GREY}Build OS:                    ${LIGHT_GREY}$BUILD_OS${NC}"
+echo " ${MEDIUM_GREY}3DNow!:                     ${LIGHT_GREY}${mm3dnow}${NC}"
+echo " ${MEDIUM_GREY}AVX:                        ${LIGHT_GREY}${avx}${NC}"
+echo " ${MEDIUM_GREY}AVX2:                       ${LIGHT_GREY}${avx2}${NC}"
+echo " ${MEDIUM_GREY}AVX-512:                    ${LIGHT_GREY}${avx512}${NC}"
+echo " ${MEDIUM_GREY}XOP:                        ${LIGHT_GREY}${xop}${NC}"
+echo " ${MEDIUM_GREY}FMA4:                       ${LIGHT_GREY}${fma4}${NC}"
+echo " ${MEDIUM_GREY}FMA3:                       ${LIGHT_GREY}${fma3}${NC}"
+echo " ${MEDIUM_GREY}MMX:                        ${LIGHT_GREY}${mmx}${NC}"
+echo " ${MEDIUM_GREY}SSE:                        ${LIGHT_GREY}${sse}${NC}"
+echo " ${MEDIUM_GREY}SSE2:                       ${LIGHT_GREY}${sse2}${NC}"
+echo " ${MEDIUM_GREY}SSE3:                       ${LIGHT_GREY}${sse3}${NC}"
+echo " ${MEDIUM_GREY}SSSE3:                      ${LIGHT_GREY}${ssse3}${NC}"
+echo " ${MEDIUM_GREY}SSE4.1:                     ${LIGHT_GREY}${sse41}${NC}"
+echo " ${MEDIUM_GREY}SSE4.2:                     ${LIGHT_GREY}${sse42}${NC}"
+echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"
+echo "${MEDIUM_GREY}=========================== Application Options ===========================${NC}"
+echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"
+echo "${MEDIUM_GREY}Wallet Support:              ${LIGHT_GREY}$enable_wallet${NC}"
+echo "${MEDIUM_GREY}GUI/Qt Support:              ${LIGHT_GREY}$bitcoin_enable_qt${NC}"
+if test x$bitcoin_enable_qt != xno; then
+    echo "    ${MEDIUM_GREY}Qt Version:              ${LIGHT_GREY}$bitcoin_qt_got_major_vers${NC}"
+    echo "    ${MEDIUM_GREY}QR Support:              ${LIGHT_GREY}$use_qr${NC}"
+fi
+echo "${MEDIUM_GREY}UPnP Support:                ${LIGHT_GREY}$use_upnp${NC}"
+echo "${MEDIUM_GREY}Debugging:                   ${LIGHT_GREY}$enable_debug${NC}"
+echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"
+echo "${MEDIUM_GREY}============================ Compiler Settings ============================${NC}"
+echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"
+echo "${MEDIUM_GREY}Compiler (C):                ${LIGHT_GREY}$CC${NC}"
+echo "${MEDIUM_GREY}C Flags:                     ${LIGHT_GREY}$CFLAGS${NC}"
+echo "${MEDIUM_GREY}Preprocessor Flags:          ${LIGHT_GREY}$CPPFLAGS${NC}"
+echo "${MEDIUM_GREY}Compiler (C++):              ${LIGHT_GREY}$CXX${NC}"
+echo "${MEDIUM_GREY}C++ Flags:                   ${LIGHT_GREY}$CXXFLAGS${NC}"
+echo "${MEDIUM_GREY}Linker Flags:                ${LIGHT_GREY}$LDFLAGS${NC}"
+echo "${MEDIUM_GREY}AR Flags:                    ${LIGHT_GREY}$ARFLAGS${NC}"
+echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"

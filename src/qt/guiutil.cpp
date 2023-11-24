@@ -16,21 +16,10 @@
 #include "util.h"
 
 #ifdef WIN32
-#ifdef _WIN32_WINNT
-#undef _WIN32_WINNT
-#endif
-#define _WIN32_WINNT 0x0501
-#ifdef _WIN32_IE
-#undef _WIN32_IE
-#endif
-#define _WIN32_IE 0x0501
-#define WIN32_LEAN_AND_MEAN 1
-#ifndef NOMINMAX
 #define NOMINMAX
-#endif
+#define WIN32_LEAN_AND_MEAN
+
 #include "shellapi.h"
-#include "shlobj.h"
-#include "shlwapi.h"
 #endif
 
 #include <boost/filesystem.hpp>
@@ -43,6 +32,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDateTime>
+#include <QDir>
 #include <QDesktopServices>
 #include <QDesktopWidget>
 #include <QDoubleValidator>
@@ -52,12 +42,7 @@
 #include <QSettings>
 #include <QTextDocument> // for Qt::mightBeRichText
 #include <QThread>
-
-#if QT_VERSION < 0x050000
-#include <QUrl>
-#else
 #include <QUrlQuery>
-#endif
 
 #if BOOST_FILESYSTEM_VERSION >= 3
 static boost::filesystem::detail::utf8_codecvt_facet utf8;
@@ -78,11 +63,7 @@ QString dateTimeStr(qint64 nTime)
 QFont bitcoinAddressFont()
 {
     QFont font("Monospace");
-#if QT_VERSION >= 0x040800
     font.setStyleHint(QFont::Monospace);
-#else
-    font.setStyleHint(QFont::TypeWriter);
-#endif
     return font;
 }
 
@@ -91,9 +72,7 @@ void setupAddressWidget(QValidatedLineEdit *widget, QWidget *parent)
     parent->setFocusProxy(widget);
 
     widget->setFont(bitcoinAddressFont());
-#if QT_VERSION >= 0x040700
     widget->setPlaceholderText(QObject::tr("Enter a Cryptonite address (e.g. CNS17iag9jJgTHD1VXjvLCEnZuQ3rJDE9L)"));
-#endif
     widget->setValidator(new BitcoinAddressEntryValidator(parent));
     widget->setCheckValidator(new BitcoinAddressCheckValidator(parent));
 }
@@ -117,12 +96,9 @@ bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
     rv.address = uri.path();
     rv.amount = 0;
 
-#if QT_VERSION < 0x050000
-    QList<QPair<QString, QString> > items = uri.queryItems();
-#else
     QUrlQuery uriQuery(uri);
     QList<QPair<QString, QString> > items = uriQuery.queryItems();
-#endif
+
     for (QList<QPair<QString, QString> >::iterator i = items.begin(); i != items.end(); i++)
     {
         bool fShouldReturnFalse = false;
@@ -202,11 +178,8 @@ bool isDust(const QString& address, qint64 amount)
 
 QString HtmlEscape(const QString& str, bool fMultiLine)
 {
-#if QT_VERSION < 0x050000
-    QString escaped = Qt::escape(str);
-#else
     QString escaped = str.toHtmlEscaped();
-#endif
+
     if(fMultiLine)
     {
         escaped = escaped.replace("\n", "<br>\n");
@@ -240,11 +213,7 @@ QString getSaveFileName(QWidget *parent, const QString &caption, const QString &
     QString myDir;
     if(dir.isEmpty()) // Default to user documents location
     {
-#if QT_VERSION < 0x050000
-        myDir = QDesktopServices::storageLocation(QDesktopServices::DocumentsLocation);
-#else
         myDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-#endif
     }
     else
     {
@@ -290,11 +259,7 @@ QString getOpenFileName(QWidget *parent, const QString &caption, const QString &
     QString myDir;
     if(dir.isEmpty()) // Default to user documents location
     {
-#if QT_VERSION < 0x050000
-        myDir = QDesktopServices::storageLocation(QDesktopServices::DocumentsLocation);
-#else
         myDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-#endif
     }
     else
     {
@@ -395,11 +360,7 @@ void TableViewLastColumnResizingFixer::disconnectViewHeadersSignals()
 // Refactored here for readability.
 void TableViewLastColumnResizingFixer::setViewHeaderResizeMode(int logicalIndex, QHeaderView::ResizeMode resizeMode)
 {
-#if QT_VERSION < 0x050000
-    tableView->horizontalHeader()->setResizeMode(logicalIndex, resizeMode);
-#else
     tableView->horizontalHeader()->setSectionResizeMode(logicalIndex, resizeMode);
-#endif
 }
 
 void TableViewLastColumnResizingFixer::resizeColumn(int nColumnIndex, int width)
@@ -496,70 +457,43 @@ TableViewLastColumnResizingFixer::TableViewLastColumnResizingFixer(QTableView* t
 }
 
 #ifdef WIN32
+QString static StartupRegistryPath()
+{
+    return "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+}
+
+QString static StartupRegistryKey()
+{
+    return "Cryptonite";
+}
+
 boost::filesystem::path static StartupShortcutPath()
 {
-    return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin.lnk";
+    return StartupRegistryPath().toStdString() + "\\" + StartupRegistryKey().toStdString();
 }
 
 bool GetStartOnSystemStartup()
 {
-    // check for Bitcoin.lnk
-    return boost::filesystem::exists(StartupShortcutPath());
+    QSettings registry(StartupRegistryPath(), QSettings::NativeFormat);
+    return registry.contains(StartupRegistryKey());
 }
 
 bool SetStartOnSystemStartup(bool fAutoStart)
 {
-    // If the shortcut exists already, remove it for updating
-    boost::filesystem::remove(StartupShortcutPath());
+    QSettings registry(StartupRegistryPath(), QSettings::NativeFormat);
 
     if (fAutoStart)
     {
-        CoInitialize(nullptr);
-
-        // Get a pointer to the IShellLink interface.
-        IShellLink* psl = nullptr;
-        HRESULT hres = CoCreateInstance(CLSID_ShellLink, nullptr,
-                                CLSCTX_INPROC_SERVER, IID_IShellLink,
-                                reinterpret_cast<void**>(&psl));
-
-        if (SUCCEEDED(hres))
-        {
-            // Get the current executable path
-            TCHAR pszExePath[MAX_PATH];
-            GetModuleFileName(nullptr, pszExePath, sizeof(pszExePath));
-
-            TCHAR pszArgs[5] = TEXT("-min");
-
-            // Set the path to the shortcut target
-            psl->SetPath(pszExePath);
-            PathRemoveFileSpec(pszExePath);
-            psl->SetWorkingDirectory(pszExePath);
-            psl->SetShowCmd(SW_SHOWMINNOACTIVE);
-            psl->SetArguments(pszArgs);
-
-            // Query IShellLink for the IPersistFile interface for
-            // saving the shortcut in persistent storage.
-            IPersistFile* ppf = nullptr;
-            hres = psl->QueryInterface(IID_IPersistFile,
-                                       reinterpret_cast<void**>(&ppf));
-            if (SUCCEEDED(hres))
-            {
-                WCHAR pwsz[MAX_PATH];
-                // Ensure that the string is ANSI.
-                MultiByteToWideChar(CP_ACP, 0, StartupShortcutPath().string().c_str(), -1, pwsz, MAX_PATH);
-                // Save the link by calling IPersistFile::Save.
-                hres = ppf->Save(pwsz, TRUE);
-                ppf->Release();
-                psl->Release();
-                CoUninitialize();
-                return true;
-            }
-            psl->Release();
-        }
-        CoUninitialize();
-        return false;
+        QString appPath = QCoreApplication::applicationFilePath();
+        appPath = QDir::toNativeSeparators(appPath);
+        registry.setValue(StartupRegistryKey(), appPath + " -min");
     }
-    return true;
+    else
+    {
+        registry.remove(StartupRegistryKey());
+    }
+
+    return fAutoStart == GetStartOnSystemStartup();
 }
 
 #elif defined(Q_OS_LINUX)

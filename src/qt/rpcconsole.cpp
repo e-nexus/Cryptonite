@@ -26,10 +26,6 @@
 #include <QThread>
 #include <QTime>
 
-#if QT_VERSION < 0x050000
-#include <QUrl>
-#endif
-
 // TODO: add a scrollback limit, as there is currently none
 // TODO: make it possible to filter out categories (esp debug messages when implemented)
 // TODO: receive errors and debug messages through ClientModel
@@ -198,7 +194,7 @@ void RPCExecutor::request(const QString &command)
 }
 
 RPCConsole::RPCConsole(QWidget *parent) :
-    QDialog(parent),
+    QWidget(parent),
     ui(new Ui::RPCConsole),
     clientModel(0),
     historyPtr(0),
@@ -276,7 +272,7 @@ bool RPCConsole::eventFilter(QObject* obj, QEvent *event)
             }
         }
     }
-    return QDialog::eventFilter(obj, event);
+    return QWidget::eventFilter(obj, event);
 }
 
 void RPCConsole::setClientModel(ClientModel *model)
@@ -354,7 +350,7 @@ void RPCConsole::clear()
     ui->messagesWidget->document()->setDefaultStyleSheet(
                 "table { }"
                 "td.time { color: #808080; padding-top: 3px; } "
-                "td.message { font-family: monospace; font-size: 12px; } " // Todo: Remove fixed font-size
+                "td.message { font-family: monospace; } "
                 "td.cmd-request { color: #006060; } "
                 "td.cmd-error { color: red; } "
                 "b { color: #006060; } "
@@ -365,11 +361,12 @@ void RPCConsole::clear()
                         tr("Type <b>help</b> for an overview of available commands.")), true);
 }
 
-void RPCConsole::reject()
+void RPCConsole::keyPressEvent(QKeyEvent *event)
 {
-    // Ignore escape keypress if this is not a seperate window
-    if(windowType() != Qt::Widget)
-        QDialog::reject();
+        if(windowType() != Qt::Widget && event->key() == Qt::Key_Escape)
+    {
+        close();
+    }
 }
 
 void RPCConsole::message(int category, const QString &message, bool html)

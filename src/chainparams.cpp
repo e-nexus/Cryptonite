@@ -105,10 +105,12 @@ public:
         if(hashGenesisBlock != uint256("0x000009a460ccc429ac6e53c91c6ed2d96697884b8b656a903042faff8971c5aa"))
 		MineGenesis(genesis);
 
-        vSeeds.push_back(CDNSSeedData("explorer.cryptonite.info", "explorer.cryptonite.info"));
-	vSeeds.push_back(CDNSSeedData("xcn.suprnova.cc", "xcn.suprnova.cc"));
-        vSeeds.push_back(CDNSSeedData("explorer.digicent.org", "explorer.digicent.org"));
 
+        vSeeds.emplace_back("dnsseed.cryptonite.info", "dnsseed.cryptonite.info");
+        // vSeeds.emplace_back("xcn.suprnova.cc", "xcn.suprnova.cc");
+        // vSeeds.emplace_back("explorer.digicent.org", "explorer.digicent.org");
+
+	
         //sa ToDO: Review. The convert_to_container stuff was added as a quick fix to get it building in c++11. it should work
         // 	but not 100% certain and haven't tested
         base58Prefixes[PUBKEY_ADDRESS] = (list_of(28)).convert_to_container<vector<unsigned char> >();

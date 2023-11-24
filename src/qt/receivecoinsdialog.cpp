@@ -180,7 +180,8 @@ void ReceiveCoinsDialog::on_showRequestButton_clicked()
         return;
     QModelIndexList selection = ui->recentRequestsView->selectionModel()->selectedRows();
 
-    for (const QModelIndex& index : selection) {
+    for (const QModelIndex& index : selection) 
+    {
         on_recentRequestsView_doubleClicked(index);
     }
 }
