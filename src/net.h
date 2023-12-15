@@ -403,7 +403,7 @@ public:
         // SendMessages will filter it again for knowns that were added
         // after addresses were pushed.
         if (addr.IsValid() && !setAddrKnown.count(addr))
-            vAddrToSend.push_back(addr);
+            vAddrToSend.emplace_back(addr);
     }
 
 
@@ -420,7 +420,7 @@ public:
         {
             LOCK(cs_inventory);
             if (!setInventoryKnown.count(inv))
-                vInventoryToSend.push_back(inv);
+                vInventoryToSend.emplace_back(inv);
         }
     }
 

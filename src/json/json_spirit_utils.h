@@ -33,7 +33,7 @@ namespace json_spirit
 
         for( typename Map_t::const_iterator i = mp_obj.begin(); i != mp_obj.end(); ++i )
         {
-            obj.push_back( typename Obj_t::value_type( i->first, i->second ) );
+            obj.emplace_back( typename Obj_t::value_type( i->first, i->second ) );
         }
     }
 

@@ -88,91 +88,78 @@ public:
     }
 
     /* Update our model of the wallet incrementally, to synchronize our model of the wallet
-       with that of the core.
+        with that of the core.
 
-       Call with transaction that was added, removed or changed.
-     */
+        Call with transaction that was added, removed or changed.
+        */
     void updateWallet(const uint256 &hash, int status)
     {
+    LOCK2(cs_main,wallet->cs_wallet);
+
+    auto mi = wallet->mapWallet.find(hash);
+    bool inWallet = mi != wallet->mapWallet.end();
+    bool showTransaction = (inWallet && TransactionRecord::showTransaction(mi->second));
+
+    auto lower = qLowerBound(cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
+    auto upper = qUpperBound(cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
+    bool inModel = (lower != upper);
+
+    if(status == CT_UPDATED && showTransaction == inModel)
+        return;
+
+    #ifdef DEBUG
         qDebug() << "TransactionTablePriv::updateWallet : " + QString::fromStdString(hash.ToString()) + " " + QString::number(status);
+        qDebug() << "   inWallet=" + QString::number(inWallet) + " inModel=" + QString::number(inModel) +
+                    " Index=" + QString::number(lower - cachedWallet.begin()) + "-" + QString::number(upper - cachedWallet.begin()) +
+                    " showTransaction=" + QString::number(showTransaction) + " derivedStatus=" + QString::number(status);
+    #endif
+
+        switch(status)
         {
-            LOCK2(cs_main,wallet->cs_wallet);
-
-            // Find transaction in wallet
-            std::map<uint256, CWalletTx>::iterator mi = wallet->mapWallet.find(hash);
-            bool inWallet = mi != wallet->mapWallet.end();
-
-            // Find bounds of this transaction in model
-            QList<TransactionRecord>::iterator lower = qLowerBound(
-                cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
-            QList<TransactionRecord>::iterator upper = qUpperBound(
-                cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
-            int lowerIndex = (lower - cachedWallet.begin());
-            int upperIndex = (upper - cachedWallet.begin());
-            bool inModel = (lower != upper);
-
-            // Determine whether to show transaction or not
-            bool showTransaction = (inWallet && TransactionRecord::showTransaction(mi->second));
-
-            if(status == CT_UPDATED)
+        case CT_NEW:
+            if(inModel)
             {
-                if(showTransaction && !inModel)
-                    status = CT_NEW; /* Not in model, but want to show, treat as new */
-                if(!showTransaction && inModel)
-                    status = CT_DELETED; /* In model, but want to hide, treat as deleted */
+    #ifdef DEBUG
+                qDebug() << "TransactionTablePriv::updateWallet : Warning: Got CT_NEW, but transaction is already in model";
+    #endif
+                break;
             }
-
-            qDebug() << "   inWallet=" + QString::number(inWallet) + " inModel=" + QString::number(inModel) +
-                        " Index=" + QString::number(lowerIndex) + "-" + QString::number(upperIndex) +
-                        " showTransaction=" + QString::number(showTransaction) + " derivedStatus=" + QString::number(status);
-
-            switch(status)
+            if(!inWallet)
             {
-            case CT_NEW:
-                if(inModel)
+    #ifdef DEBUG
+                qDebug() << "TransactionTablePriv::updateWallet : Warning: Got CT_NEW, but transaction is not in wallet";
+    #endif
+                break;
+            }
+            if(showTransaction)
+            {
+                QList<TransactionRecord> toInsert = TransactionRecord::decomposeTransaction(wallet, mi->second);
+                if(!toInsert.isEmpty())
                 {
-                    qDebug() << "TransactionTablePriv::updateWallet : Warning: Got CT_NEW, but transaction is already in model";
-                    break;
-                }
-                if(!inWallet)
-                {
-                    qDebug() << "TransactionTablePriv::updateWallet : Warning: Got CT_NEW, but transaction is not in wallet";
-                    break;
-                }
-                if(showTransaction)
-                {
-                    // Added -- insert at the right position
-                    QList<TransactionRecord> toInsert =
-                            TransactionRecord::decomposeTransaction(wallet, mi->second);
-                    if(!toInsert.isEmpty()) /* only if something to insert */
+                    int lowerIndex = lower - cachedWallet.begin();
+                    parent->beginInsertRows(QModelIndex(), lowerIndex, lowerIndex+toInsert.size()-1);
+                    for (const TransactionRecord &rec : toInsert)
                     {
-                        parent->beginInsertRows(QModelIndex(), lowerIndex, lowerIndex+toInsert.size()-1);
-                        int insert_idx = lowerIndex;
-                        for (const TransactionRecord &rec : toInsert)
-                        {
-                            cachedWallet.insert(insert_idx, rec);
-                            insert_idx += 1;
-                        }
-                        parent->endInsertRows();
+                        cachedWallet.append(rec);
                     }
+                    parent->endInsertRows();
                 }
-                break;
-            case CT_DELETED:
-                if(!inModel)
-                {
-                    qDebug() << "TransactionTablePriv::updateWallet : Warning: Got CT_DELETED, but transaction is not in model";
-                    break;
-                }
-                // Removed -- remove entire transaction from table
-                parent->beginRemoveRows(QModelIndex(), lowerIndex, upperIndex-1);
-                cachedWallet.erase(lower, upper);
-                parent->endRemoveRows();
-                break;
-            case CT_UPDATED:
-                // Miscellaneous updates -- nothing to do, status update will take care of this, and is only computed for
-                // visible transactions.
+            }
+            break;
+        case CT_DELETED:
+            if(!inModel)
+            {
+    #ifdef DEBUG
+                qDebug() << "TransactionTablePriv::updateWallet : Warning: Got CT_DELETED, but transaction is not in model";
+    #endif
                 break;
             }
+            parent->beginRemoveRows(QModelIndex(), lower - cachedWallet.begin(), upper - cachedWallet.begin() - 1);
+            cachedWallet.erase(lower, upper);
+            parent->endRemoveRows();
+            break;
+        case CT_UPDATED:
+            break;
         }
     }
 
