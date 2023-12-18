@@ -51,7 +51,7 @@ bool DecomposeSig(uint256 hash, vector<unsigned char> sig, vector<pair<uint160, 
 
     CPubKey key;
     for(uint32_t i=0; i < nSigs; i++){
-        if(!key.RecoverCompact(hash,&sig[1+i*65])){
+        if (!key.RecoverCompact(hash, std::vector<unsigned char>(&sig[1+i*65], &sig[1+(i+1)*65]))){
 	    return false;
 	}
 

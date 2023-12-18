@@ -310,7 +310,7 @@ Value verifymessage(const Array& params, bool fHelp)
     CPubKey pubkey;
     if(vchSig.size()!=65)
 	return false;
-    if (!pubkey.RecoverCompact(ss.GetHash(), &vchSig[0]))
+    if (!pubkey.RecoverCompact(ss.GetHash(), vchSig))
         return false;
 
     return (pubkey.GetID() == keyID);

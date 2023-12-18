@@ -240,7 +240,7 @@ bool VerifyScript(const CScript& scriptSig, const uint160& pubKey, const CTransa
 	CPubKey key;
     	vector<uint160> recoveredKeys;
 	for(uint32_t i=0; i < nSigs; i++){
-	    if(!key.RecoverCompact(hash,&txin.scriptSig[1+i*65])){
+	    if (!key.RecoverCompact(hash, std::vector<unsigned char>(&txin.scriptSig[1+i*65], &txin.scriptSig[1+(i+1)*65]))) {
 		printf("Could not recover key\n");
 		return false;
 	    }

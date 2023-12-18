@@ -75,23 +75,6 @@ AC_PATH_PROG(XGETTEXT,xgettext)
 AC_PATH_PROG(HEXDUMP,hexdump)
 PKG_PROG_PKG_CONFIG
 
-# Define variables for each check
-AC_CHECK_HEADER([mm3dnow.h], [mm3dnow=yes], [mm3dnow=no])
-AC_CHECK_HEADER([avxintrin.h], [avx=yes], [avx=no])
-AC_CHECK_HEADER([avx2intrin.h], [avx2=yes], [avx2=no])
-AC_CHECK_HEADER([avx512fintrin.h], [avx512=yes], [avx512=no])
-AC_CHECK_HEADER([xopintrin.h], [xop=yes], [xop=no])
-AC_CHECK_HEADER([fma4intrin.h], [fma4=yes], [fma4=no])
-AC_CHECK_HEADER([fmaintrin.h], [fma3=yes], [fma3=no])
-AC_CHECK_HEADER([mmintrin.h], [mmx=yes], [mmx=no])
-AC_CHECK_HEADER([xmmintrin.h], [sse=yes], [sse=no])
-AC_CHECK_HEADER([emmintrin.h], [sse2=yes], [sse2=no])
-AC_CHECK_HEADER([pmmintrin.h], [sse3=yes], [sse3=no])
-AC_CHECK_HEADER([tmmintrin.h], [ssse3=yes], [ssse3=no])
-AC_CHECK_HEADER([smmintrin.h], [sse41=yes], [sse41=no])
-AC_CHECK_HEADER([nmmintrin.h], [sse42=yes], [sse42=no])
-AC_CHECK_HEADER([wmmintrin.h], [sse4=yes], [sse4=no])
-
 # Enable wallet
 AC_ARG_ENABLE([wallet],
   [AS_HELP_STRING([--enable-wallet],
@@ -226,6 +209,8 @@ case $host in
      AC_CHECK_LIB([wtsapi32],      [main],, AC_MSG_ERROR(lib missing))
      AC_CHECK_LIB([zstd],      [main],, AC_MSG_ERROR(lib missing))
      AC_CHECK_LIB([opengl32],      [main],, AC_MSG_ERROR(lib missing))
+     AC_CHECK_LIB([secp256k1],      [main],, AC_MSG_ERROR(lib missing))
+     
 
      AX_CHECK_LINK_FLAG([[-static]],[LDFLAGS="$LDFLAGS -static"])
      AX_CHECK_LINK_FLAG([[-static-libgcc]],[LDFLAGS="$LDFLAGS -static-libgcc"])
@@ -305,22 +290,6 @@ case $host in
    *)
      ;;
 esac
-
-AS_IF([echo "$CXXFLAGS" | grep -q -e "-march"],
-    [
-        AC_MSG_WARN([CXXFLAGS already contains -march flag; additional optimizations will not be checked])
-    ],
-    [
-        AX_CHECK_COMPILE_FLAG([-march=native],
-            [
-                CXXFLAGS="$CXXFLAGS -march=native"
-            ],
-            [
-                AC_MSG_WARN([Compiler optimizations specific to the native architecture cannot be used])
-            ]
-        )
-    ]
-)
 
 if test x$use_comparison_tool != xno; then
   AC_SUBST(JAVA_COMPARISON_TOOL, $use_comparison_tool)
@@ -875,20 +844,6 @@ echo "${MEDIUM_GREY}============================ System Information ============
 echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"
 echo "${MEDIUM_GREY}Target OS:                   ${LIGHT_GREY}$TARGET_OS${NC}"
 echo "${MEDIUM_GREY}Build OS:                    ${LIGHT_GREY}$BUILD_OS${NC}"
-echo " ${MEDIUM_GREY}3DNow!:                     ${LIGHT_GREY}${mm3dnow}${NC}"
-echo " ${MEDIUM_GREY}AVX:                        ${LIGHT_GREY}${avx}${NC}"
-echo " ${MEDIUM_GREY}AVX2:                       ${LIGHT_GREY}${avx2}${NC}"
-echo " ${MEDIUM_GREY}AVX-512:                    ${LIGHT_GREY}${avx512}${NC}"
-echo " ${MEDIUM_GREY}XOP:                        ${LIGHT_GREY}${xop}${NC}"
-echo " ${MEDIUM_GREY}FMA4:                       ${LIGHT_GREY}${fma4}${NC}"
-echo " ${MEDIUM_GREY}FMA3:                       ${LIGHT_GREY}${fma3}${NC}"
-echo " ${MEDIUM_GREY}MMX:                        ${LIGHT_GREY}${mmx}${NC}"
-echo " ${MEDIUM_GREY}SSE:                        ${LIGHT_GREY}${sse}${NC}"
-echo " ${MEDIUM_GREY}SSE2:                       ${LIGHT_GREY}${sse2}${NC}"
-echo " ${MEDIUM_GREY}SSE3:                       ${LIGHT_GREY}${sse3}${NC}"
-echo " ${MEDIUM_GREY}SSSE3:                      ${LIGHT_GREY}${ssse3}${NC}"
-echo " ${MEDIUM_GREY}SSE4.1:                     ${LIGHT_GREY}${sse41}${NC}"
-echo " ${MEDIUM_GREY}SSE4.2:                     ${LIGHT_GREY}${sse42}${NC}"
 echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"
 echo "${MEDIUM_GREY}=========================== Application Options ===========================${NC}"
 echo "${DARK_GREY}═══════════════════════════════════════════════════════════════════════════${NC}"

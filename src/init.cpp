@@ -63,6 +63,7 @@ enum BindFlags {
     BF_REPORT_ERROR = (1U << 1)
 };
 
+static boost::scoped_ptr<ECCVerifyHandle> globalVerifyHandle;
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -146,6 +147,7 @@ void Shutdown()
     if (pwalletMain)
         delete pwalletMain;
 #endif
+    globalVerifyHandle.reset();
     LogPrintf("Shutdown : done\n");
 }
 
@@ -638,6 +640,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 #endif
     // ********************************************************* Step 4: application initialization: dir lock, daemonize, pidfile, debug log
 
+    globalVerifyHandle.reset(new ECCVerifyHandle());
     std::string strDataDir = GetDataDir().string();
 #ifdef ENABLE_WALLET
     // Wallet file must be a plain filename without a directory
