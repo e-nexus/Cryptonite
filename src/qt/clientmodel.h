@@ -6,6 +6,7 @@
 #define CLIENTMODEL_H
 
 #include <QObject>
+#include <cstring>
 
 class AddressTableModel;
 class OptionsModel;
@@ -37,6 +38,18 @@ enum NumConnections {
 class ClientModel : public QObject
 {
     Q_OBJECT
+
+struct ClientModelState {
+    int numBlocks;
+    int numHeaders;
+    int totalMissing;
+    int trieComplete;
+    bool reindex;
+    bool importing;
+    bool trieOnline;
+    bool validating;
+    double progress;
+};
 
 public:
     explicit ClientModel(OptionsModel *optionsModel, QObject *parent = 0);
@@ -85,16 +98,9 @@ private:
     OptionsModel *optionsModel;
     PeerTableModel *peerTableModel;
 
-    int cachedNumBlocks;
-    int cachedNumHeaders;
-    int cachedTotalMissing;
-    int cachedTrieComplete;
-    bool cachedReindexing;
-    bool cachedImporting;
-    bool cachedTrieOnline;
-    bool cachedValidating;
+    ClientModelState cachedState;
+
     int numBlocksAtStartup;
-    int cachedProgress;
 
     QTimer *pollTimer;
 

@@ -92,46 +92,38 @@ bool CBlockTreeDB::ReadFlag(const std::string &name, bool &fValue) {
 }
 
 bool CBlockTreeDB::LoadBlockIndexGuts() {
-    leveldb::Iterator *pcursor = NewIterator();
-    CDataStream ssKeySet(SER_DISK, CLIENT_VERSION), ssKey(SER_DISK, CLIENT_VERSION), ssValue(SER_DISK, CLIENT_VERSION);
+    std::unique_ptr<leveldb::Iterator> pcursor(NewIterator());
+    CDataStream ssKeySet(SER_DISK, CLIENT_VERSION);
     ssKeySet << std::make_pair('b', uint256(0));
     pcursor->Seek(ssKeySet.str());
 
     while (pcursor->Valid()) {
         boost::this_thread::interruption_point();
-        
-        // Reusing the streams by clearing them for new data
-        ssKey.clear();
-        ssValue.clear();
-        
+
         leveldb::Slice slKey = pcursor->key();
         leveldb::Slice slValue = pcursor->value();
-        
-        ssKey.reserve(slKey.size());
-        ssKey.write(slKey.data(), slKey.size());
+
+        CDataStream ssKey(slKey.data(), slKey.data() + slKey.size(), SER_DISK, CLIENT_VERSION);
+        CDataStream ssValue(slValue.data(), slValue.data() + slValue.size(), SER_DISK, CLIENT_VERSION);
+
         char chType;
         ssKey >> chType;
 
         if (chType == 'b') {
-            ssValue.reserve(slValue.size());
-            ssValue.write(slValue.data(), slValue.size());
             CDiskBlockIndex diskindex;
-
             try {
                 ssValue >> diskindex;
             } catch (std::exception &e) {
-                delete pcursor;
                 return error("%s : Deserialize or I/O error - %s", __PRETTY_FUNCTION__, e.what());
             }
 
             if (!diskindex.CheckIndex()) {
                 error("LoadBlockIndex() : CheckIndex failed: %s", diskindex.GetBlockHash().ToString().c_str());
-                pcursor->Next();
                 continue;
             }
 
             CBlockIndex* pindexNew = InsertBlockIndex(diskindex.GetBlockHash(), diskindex.GetBlockHeader());
-            if (pindexNew) { // Check for null pointer
+            if (pindexNew) {
                 pindexNew->nFile = diskindex.nFile;
                 pindexNew->nDataPos = diskindex.nDataPos;
                 pindexNew->nUndoPos = diskindex.nUndoPos;
@@ -139,11 +131,9 @@ bool CBlockTreeDB::LoadBlockIndexGuts() {
                 pindexNew->nTx = diskindex.nTx;
             }
         } else {
-            break; // Finished loading block index
+            break;
         }
         pcursor->Next();
     }
-    
-    delete pcursor; // Always free resources
     return true;
 }

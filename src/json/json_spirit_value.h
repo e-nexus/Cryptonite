@@ -117,7 +117,7 @@ namespace json_spirit
 
         static Value_type& add( Object_type& obj, const String_type& name, const Value_type& value )
         {
-            obj.push_back( Pair_type( name , value ) );
+            obj.emplace_back( Pair_type( name , value ) );
 
             return obj.back().value_;
         }

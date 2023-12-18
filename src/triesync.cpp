@@ -212,9 +212,6 @@ bool overlap(list<CInterval>::iterator it, list<CInterval>::iterator it2){
 	return (overlap_left(it,it2) || overlap_left(it2,it));
 }
 
-
-
-
 void TrieSync::GetIntervals(multimap<CBlockIndex*,CSlice*> &slices, list<CInterval> &intervals){
    //We want to produce a vector of all intervals that either have requests outstanding
     //or have already been fetched
@@ -347,46 +344,46 @@ bool TrieSync::ReadyToBuild(){
     return true;
 }
 
-//TODO: all wrong
 void TrieSync::ApplyTransactions(map<uint160, AccountData> &data, CBlock &block){
-    //Txout first
+    // Process outputs first
     for (CTransaction tx : block.vtx){
-	for (CTxOut txout : tx.vout){   
-	    AccountData ad; 
-	    if(data.find(txout.pubKey)!=data.end())
-		ad = data[txout.pubKey];
-  	    ad.SetKey(txout.pubKey);	
-	    //No set age on output
-//	    ad.SetAge(block.nHeight);
-	    ad.SetBalance(ad.Balance()+txout.nValue);
-	    data[txout.pubKey] = ad;
-	}
+        for (CTxOut txout : tx.vout){   
+            AccountData ad; 
+            if(data.find(txout.pubKey) != data.end())
+                ad = data[txout.pubKey];
+            ad.SetKey(txout.pubKey);	
+            // No set age on output
+            // ad.SetAge(block.nHeight);
+            ad.SetBalance(ad.Balance() + txout.nValue);
+            data[txout.pubKey] = ad;
+        }
     }
 
+    // Then process inputs
     for (CTransaction tx : block.vtx){
-	for (CTxIn txin : tx.vin){   
-	    if(data.find(txin.pubKey)==data.end())
-		continue; //Account not in slices yet, no worries
-	    AccountData ad = data[txin.pubKey]; 
+        for (CTxIn txin : tx.vin){   
+            if(data.find(txin.pubKey) == data.end())
+                continue; // Account not in slices yet, no worries
+            AccountData ad = data[txin.pubKey]; 
 
-	    if(txin.nValue >= ad.Balance()){
-		data.erase(txin.pubKey);
-		continue;
-	    }
-	    if(tx.fSetLimit)
-		ad.SetFutureLimit(tx.nLimitValue);
+            if(txin.nValue >= ad.Balance()){
+                data.erase(txin.pubKey);
+                continue;
+            }
+            if(tx.fSetLimit)
+                ad.SetFutureLimit(tx.nLimitValue);
 
-	    if(ad.FutureLimit() < ad.Limit())
-		ad.SetLimit(ad.FutureLimit());
+            if(ad.FutureLimit() < ad.Limit())
+                ad.SetLimit(ad.FutureLimit());
 
-	    if(block.nHeight - ad.Age() > MIN_LIMIT_TIME){
- 	        ad.SetLimit(ad.FutureLimit());		
-	    }
-	    ad.SetAge(block.nHeight);
-	    
-	    ad.SetBalance(ad.Balance()-txin.nValue);
-	    data[txin.pubKey] = ad;
-	}
+            if(block.nHeight - ad.Age() > MIN_LIMIT_TIME){
+                ad.SetLimit(ad.FutureLimit());		
+            }
+            ad.SetAge(block.nHeight);
+            
+            ad.SetBalance(ad.Balance() - txin.nValue);
+            data[txin.pubKey] = ad;
+        }
     }
 }
 

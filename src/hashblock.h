@@ -30,8 +30,6 @@ GLOBAL sph_haval256_5_context z_haval;
 GLOBAL sph_tiger_context      z_tiger;
 GLOBAL sph_ripemd160_context  z_ripemd;
 
-
-
 #define fillz() do { \
     sph_sha512_init(&z_sha512); \
     sph_sha256_init(&z_sha256); \
@@ -145,15 +143,8 @@ inline uint256 Hash7(const T1 pbegin, const T1 pend)
     sph_sha256 (&ctx_sha256, data,bytes);
     sph_sha256_close(&ctx_sha256, static_cast<void*>(&finalhash));
 
-
     free(data);
     return finalhash;
 }
 
-
-
-
-
-
 #endif // HASHBLOCK_H
-

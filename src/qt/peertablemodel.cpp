@@ -74,9 +74,15 @@ public:
             }
         }
 
-        // Try to retrieve the CNodeStateStats for each node.
-        for (CNodeCombinedStats &stats : cachedNodeStats)
-            stats.fNodeStateStatsAvailable = GetNodeStateStats(stats.nodeStats.nodeid, stats.nodeStateStats);
+        {
+            TRY_LOCK(cs_main, lockMain);
+            if (lockMain)
+            {
+            // Try to retrieve the CNodeStateStats for each node.
+            for (CNodeCombinedStats &stats : cachedNodeStats)
+                stats.fNodeStateStatsAvailable = GetNodeStateStats(stats.nodeStats.nodeid, stats.nodeStateStats);
+            }
+        }
 
         if (sortColumn >= 0)
             // sort cacheNodeStats (use stable sort to prevent rows jumping around unneceesarily)

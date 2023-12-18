@@ -331,7 +331,7 @@ public:
                     READWRITE(info);
                     am->mapAddr[info] = n;
                     info.nRandomPos = vRandom.size();
-                    am->vRandom.push_back(n);
+                    am->vRandom.emplace_back(n);
                     if (nUBuckets != ADDRMAN_NEW_BUCKET_COUNT)
                     {
                         am->vvNew[info.GetNewBucket(am->nKey)].insert(n);
@@ -349,10 +349,10 @@ public:
                     {
                         info.nRandomPos = vRandom.size();
                         info.fInTried = true;
-                        am->vRandom.push_back(am->nIdCount);
+                        am->vRandom.emplace_back(am->nIdCount);
                         am->mapInfo[am->nIdCount] = info;
                         am->mapAddr[info] = am->nIdCount;
-                        vTried.push_back(am->nIdCount);
+                        vTried.emplace_back(am->nIdCount);
                         am->nIdCount++;
                     } else {
                         nLost++;
