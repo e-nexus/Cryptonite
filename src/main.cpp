@@ -440,71 +440,97 @@ unsigned int GetLegacySigOpCount(const CTransaction& tx)
 
 bool CheckTransaction(const CTransaction& tx, CValidationState &state)
 {
-    // Store the sizes of vin and vout to avoid multiple calls
-    size_t vinSize = tx.vin.size();
-    size_t voutSize = tx.vout.size();
-
-    // Combined checks for empty transaction inputs and outputs
-    if (vinSize == 0 || voutSize == 0)
-        return state.DoS(10, error("CheckTransaction() : vin or vout empty"),
-                        REJECT_INVALID, "bad-txns-vin-empty");
-
+    // Basic checks that don't depend on any context
+    if (tx.vin.empty())
+        return state.DoS(10, error("CheckTransaction() : vin empty"),
+                         REJECT_INVALID, "bad-txns-vin-empty");
+    if (tx.vout.empty())
+        return state.DoS(10, error("CheckTransaction() : vout empty"),
+                         REJECT_INVALID, "bad-txns-vout-empty");
     // Size limits
     if (::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION) > MAX_BLOCK_SIZE)
         return state.DoS(100, error("CheckTransaction() : size limits failed"),
-                        REJECT_INVALID, "bad-txns-oversize");
+                         REJECT_INVALID, "bad-txns-oversize");
 
     // Check for negative or overflow output values
-    uint64_t nValueOut = tx.GetValueOut();
-    uint64_t nValueIn = tx.GetValueIn();
-
-    if (nValueIn < nValueOut)
-    {
-        return state.DoS(100, error("CheckTransaction() : txin < txout"),
-                            REJECT_INVALID, "bad-txns-makes-money");
+    uint64_t nValueOut;
+    try {
+        nValueOut = tx.GetValueOut();
+    } catch (int e) {
+            return state.DoS(100, error("CheckTransaction() : txout total out of range"),
+                             REJECT_INVALID, "bad-txns-txouttotal-toolarge");
     }
+
+    uint64_t nValueIn;
+    try {
+        nValueIn = tx.GetValueIn();
+    } catch (int e) {
+            return state.DoS(100, error("CheckTransaction() : txin total out of range"),
+                             REJECT_INVALID, "bad-txns-txintotal-toolarge");
+    }
+
+    if(nValueIn < nValueOut){
+        return state.DoS(100, error("CheckTransaction() : txin < txout"),
+                             REJECT_INVALID, "bad-txns-makes-money");
+    }
+    //uint64_t nFees = nValueIn - nValueOut;
 
     //Check message size
-    if(tx.msg.size() > MAX_MSG_SIZE)
-    {
+    if(tx.msg.size() > MAX_MSG_SIZE){
         return state.DoS(100, error("CheckTransaction() : msg too long"),
-                            REJECT_INVALID, "bad-txns-msg-length");
+                             REJECT_INVALID, "bad-txns-msg-length");
     }
 
-    // Early return for coinbase transactions
+		if (!tx.IsCoinBase()) {
+			for (const CTxIn& txin : tx.vin)
+			{
+				uint64_t balance=0;
+				pviewTip->Balance(txin.pubKey,balance);
+				if(balance > 1800000000 * COIN)
+						return state.DoS(100, error("CheckTransaction() : txin out of range"),
+														 REJECT_INVALID, "bad-txns-txintotal-toolarge");
+			}
+		}
+
+    // Check for duplicate inputs
+    set<uint160> vInOutPoints;
+    for (const CTxIn& txin : tx.vin)
+    {
+        if (vInOutPoints.count(txin.pubKey))
+            return state.DoS(100, error("CheckTransaction() : duplicate inputs"),
+                             REJECT_INVALID, "bad-txns-inputs-duplicate");
+        vInOutPoints.insert(txin.pubKey);
+    }
+
+    // Check for duplicate outputs
+    vInOutPoints.clear();
+    for (const CTxOut& txout : tx.vout)
+    {
+        if (vInOutPoints.count(txout.pubKey))
+            return state.DoS(100, error("CheckTransaction() : duplicate outputs"),
+                             REJECT_INVALID, "bad-txns-output-duplicate");
+        vInOutPoints.insert(txout.pubKey);
+    }
+
     if (tx.IsCoinBase())
     {
-        if (tx.vin[0].scriptSig.size() != 0)
-        {
-	        printf("SciptSig: %ld\n", tx.vin[0].scriptSig.size());
+        if (tx.vin[0].scriptSig.size() != 0){
+	    printf("SciptSig: %ld\n", tx.vin[0].scriptSig.size());
             return state.DoS(100, error("CheckTransaction() : coinbase script size"),
-                            REJECT_INVALID, "bad-cb-length");
-	    }
-
-	    if (voutSize != 1)
-        {
+                             REJECT_INVALID, "bad-cb-length");
+	}
+	if(tx.vout.size() != 1){
             return state.DoS(100, error("CheckTransaction() : coinbase outputs"),
-                            REJECT_INVALID, "bad-cb-output");
-	    }
-        return true;
+                             REJECT_INVALID, "bad-cb-output");
+	}
     }
-
-    // Single loop for duplicate checks
-    set<uint160> vInOutPoints;
-    for (size_t i = 0; i < max(vinSize, voutSize); i++)
+    else
     {
-        if (i < vinSize && !vInOutPoints.insert(tx.vin[i].pubKey).second)
-            return state.DoS(100, error("CheckTransaction() : duplicate inputs"),
-                            REJECT_INVALID, "bad-txns-inputs-duplicate");
-        if (i < voutSize && !vInOutPoints.insert(tx.vout[i].pubKey).second)
-            return state.DoS(100, error("CheckTransaction() : duplicate outputs"),
-                            REJECT_INVALID, "bad-txns-output-duplicate");
+        for (const CTxIn& txin : tx.vin)
+            if (txin.IsNull())
+                return state.DoS(10, error("CheckTransaction() : input is null"),
+                                 REJECT_INVALID, "bad-txns-input-null");
     }
-
-    for (const CTxIn& txin : tx.vin)
-        if (txin.IsNull())
-            return state.DoS(10, error("CheckTransaction() : input is null"),
-                            REJECT_INVALID, "bad-txns-input-null");
 
     return true;
 }
