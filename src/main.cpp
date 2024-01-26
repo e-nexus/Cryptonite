@@ -28,6 +28,8 @@
 
 #include <gmpxx.h>
 
+#include <chrono>
+#include <deque>
 #include <map>
 
 namespace fs = boost::filesystem;
@@ -435,7 +437,6 @@ unsigned int GetLegacySigOpCount(const CTransaction& tx)
     }
     return nSigOps;
 }
-
 
 bool CheckTransaction(const CTransaction& tx, CValidationState &state)
 {
@@ -1956,47 +1957,50 @@ bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW, bo
     // Size limits
     if (block.vtx.empty())
         return state.DoS(100, error("CheckBlock() : size limits failed"),
-                         REJECT_INVALID, "bad-blk-length");
+                        REJECT_INVALID, "bad-blk-length");
 
     // First transaction must be coinbase, the rest must not be, genesis TX is non-standard
     if ((block.vtx.empty() || !block.vtx[0].IsCoinBase()) && block.nHeight != 0)
         return state.DoS(100, error("CheckBlock() : first tx is not coinbase"),
-                         REJECT_INVALID, "bad-cb-missing");
+                        REJECT_INVALID, "bad-cb-missing");
 
     // Coinbase lockheight must be = height
-    if (block.vtx[0].nLockHeight != block.nHeight){
-	return state.DoS(100, error("CheckBlock() : coinbase lockheight != block height"),
-			REJECT_INVALID, "bad-cb-height");
+    if (block.vtx[0].nLockHeight != block.nHeight)
+    {
+	    return state.DoS(100, error("CheckBlock() : coinbase lockheight != block height"),
+		            	REJECT_INVALID, "bad-cb-height");
     }
-
-    for (unsigned int i = 1; i < block.vtx.size(); i++)
-        if (block.vtx[i].IsCoinBase())
-            return state.DoS(100, error("CheckBlock() : more than one coinbase"),
-                             REJECT_INVALID, "bad-cb-multiple");
 
     // Check transactions
     if(block.nHeight!=0){
-    	for (const CTransaction& tx : block.vtx)
-            if (!CheckTransaction(tx, state))
+    	for (auto it = block.vtx.begin(); it != block.vtx.end(); ++it)
+            if (!CheckTransaction(*it, state))
             	return error("CheckBlock() : CheckTransaction failed");
     }
 
     //Check for multiple limit updates or withdrawal + limit update combo
     set<uint160> setLimit, setWD;
-    for (const CTransaction& tx : block.vtx){
-	if(tx.fSetLimit){
-	    if(setLimit.count(tx.vin[0].pubKey) || setWD.count(tx.vin[0].pubKey)){
-		return error("CheckBlock() : Limit and withdrawal overlap");
+    for (auto it = block.vtx.begin(); it != block.vtx.end(); ++it)
+    {
+        if(it->fSetLimit)
+        {
+            if(setLimit.count(it->vin[0].pubKey) || setWD.count(it->vin[0].pubKey))
+            {
+                return error("CheckBlock() : Limit and withdrawal overlap");
+            }
+            setLimit.insert(it->vin[0].pubKey);
+        }
+        else
+        {
+            for (auto txin = it->vin.begin(); txin != it->vin.end(); ++txin)
+            {
+                if(setLimit.count(txin->pubKey))
+                {
+                    return error("CheckBlock() : Limit and withdrawal overlap");
+                }
+                setWD.insert(txin->pubKey);
+            }
 	    }
-	    setLimit.insert(tx.vin[0].pubKey);
-	}else{
-	    for (const CTxIn txin : tx.vin){
-		if(setLimit.count(txin.pubKey)){
-		    return error("CheckBlock() : Limit and withdrawal overlap");
-		}
-		setWD.insert(txin.pubKey);
-	    }
-	}
     }
 
     // Build the merkle tree already. We need it anyway later, and it makes the
@@ -2007,24 +2011,25 @@ bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW, bo
     // Check for duplicate txids. This is caught by ConnectInputs(),
     // but catching it earlier avoids a potential DoS attack:
     set<uint256> uniqueTx;
-    for (unsigned int i = 0; i < block.vtx.size(); i++) {
-        uniqueTx.insert(block.vtx[i].GetTxID());
+    for (const auto& tx : block.vtx) 
+    {
+        uniqueTx.insert(tx.GetTxID());
     }
+
     if (uniqueTx.size() != block.vtx.size())
         return state.DoS(100, error("CheckBlock() : duplicate transaction"),
-                         REJECT_INVALID, "bad-txns-duplicate", true);
+                    REJECT_INVALID, "bad-txns-duplicate", true);
 
-    unsigned int nSigOps = 0;
-    for (const CTransaction& tx : block.vtx)
-    {
-        nSigOps += GetLegacySigOpCount(tx);
-    }
-
+        unsigned int nSigOps = 0;
+        for (const auto& tx : block.vtx)
+        {
+            nSigOps += GetLegacySigOpCount(tx);
+        }
+        
     // Check merkle root
     if (fCheckMerkleRoot && block.hashMerkleRoot != block.vMerkleTree.back())
         return state.DoS(100, error("CheckBlock() : hashMerkleRoot mismatch"),
-                         REJECT_INVALID, "bad-txnmrklroot", true);
-
+                    REJECT_INVALID, "bad-txnmrklroot", true);
     return true;
 }
 
@@ -2040,8 +2045,7 @@ bool static WriteBlockPosition(CBlockIndex *pindexNew, const CBlock &block, cons
         pindexNew->nStatus = (pindexNew->nStatus & ~BLOCK_VALID_MASK) | BLOCK_VALID_TRANSACTIONS;
 
     return pblocktree->WriteBlockIndex(CDiskBlockIndex(pindexNew));
- }
-
+}
 
 bool static AcceptBlockHeader(const CBlockHeader &block, CValidationState& state, CBlockIndex* &pindexNew)
 {
@@ -2582,48 +2586,42 @@ FILE* OpenUndoFile(const CDiskBlockPos &pos, bool fReadOnly) {
 
 bool static LinkOrphans(const uint256 *phashParent) {
     bool fWorkDone = false;
-    const uint256 &hashGenesisBlock = Params().HashGenesisBlock();
+    const auto &hashGenesisBlock = Params().HashGenesisBlock();
 
-    deque<multimap<uint256, CBlockIndex*>::iterator> vTodo;
+    deque<map<uint256, CBlockIndex*>::iterator> vTodo;
     if (phashParent) {
-        map<uint256, CBlockIndex*>::iterator itpar = mapBlockIndex.find(*phashParent);
+        auto itpar = mapBlockIndex.find(*phashParent);
         if (*phashParent == uint256(0) || (itpar != mapBlockIndex.end() && itpar->second->nHeight != -1)) {
-            multimap<uint256, CBlockIndex*>::iterator it = mapOrphanBlocksByPrev.find(*phashParent);
-            while (it != mapOrphanBlocksByPrev.end() && it->first == *phashParent) { //How would it->first ever not be phashParent?
-                vTodo.push_back(it);
-                it++;
+            auto it = mapOrphanBlocksByPrev.find(*phashParent);
+            while (it != mapOrphanBlocksByPrev.end() && it->first == *phashParent) {
+                vTodo.emplace_back(it);
+                ++it;
             }
         }
     } else {
-        // First find unconnected blocks whose parent is connected.
-        for (multimap<uint256, CBlockIndex*>::iterator it = mapOrphanBlocksByPrev.begin(); it != mapOrphanBlocksByPrev.end(); ) {
-            multimap<uint256, CBlockIndex*>::iterator itnow = it++;
+        for (auto it = mapOrphanBlocksByPrev.begin(); it != mapOrphanBlocksByPrev.end(); ) {
+            auto itnow = it++;
 
             if (itnow->second->fConnected) {
                 mapOrphanBlocksByPrev.erase(itnow);
                 continue;
             }
-            map<uint256, CBlockIndex*>::iterator itprev = mapBlockIndex.find(itnow->first);
+            auto itprev = mapBlockIndex.find(itnow->first);
             if (itnow->first == uint256(0) || (itprev != mapBlockIndex.end() && itprev->second->fConnected)) {
-                vTodo.push_back(itnow);
+                vTodo.emplace_back(itnow);
             }
         }
     }
 
-    // Iterate as long as such parent-connected unconnecteds exist, adding children to the
-    // queue after adding a node.
     while (!vTodo.empty()) {
-        multimap<uint256, CBlockIndex*>::iterator it = vTodo.front();
-        uint256 hashPrev = it->first;
-        CBlockIndex *pindex = it->second;
-        mapOrphanBlocksByPrev.erase(it);
+        auto [hashPrev, pindex] = *vTodo.front();
+        mapOrphanBlocksByPrev.erase(vTodo.front());
         vTodo.pop_front();
-	//printf("vtodo\n");
+
         if (hashPrev == uint256(0)) {
             if (pindex->GetBlockHash() != hashGenesisBlock) {
                 continue;
             }
-            // Deal with the genesis block specially.
             pindexGenesisBlock = pindex;
             pindex->fConnected=true;
             pindex->nChainWork = pindex->GetBlockWork();
@@ -2641,21 +2639,16 @@ bool static LinkOrphans(const uint256 *phashParent) {
             }
         }
         fWorkDone = true;
-	//printf("going to insert %d\n", pindex->nStatus);
+
         if (!(pindex->nStatus & BLOCK_FAILED_MASK) && ((pindex->nStatus & BLOCK_VALID_MASK) >= BLOCK_VALID_TREE)){
-	    //printf("insert\n");
-	    pindex->nSequenceId = ++nBlockSequenceId;
+            pindex->nSequenceId = ++nBlockSequenceId;
             setBlockIndexValid.insert(pindex);
-	}else{
-	    //printf("Couldn't insert %d\n", pindex->nStatus);
-	}
-        const uint256 &hashBlock = pindex->GetBlockHash();
-        multimap<uint256, CBlockIndex*>::iterator itadd = mapOrphanBlocksByPrev.lower_bound(hashBlock);
+        }
+        const auto &hashBlock = pindex->GetBlockHash();
+        auto itadd = mapOrphanBlocksByPrev.lower_bound(hashBlock);
         while (itadd != mapOrphanBlocksByPrev.end() && itadd->first == hashBlock)
-            vTodo.push_back(itadd++);
+            vTodo.emplace_back(itadd++);
     }
-    //printf("linkorphans dones\n");
-    //printAffairs();
     return fWorkDone;
 }
 
@@ -2699,9 +2692,20 @@ bool static LoadBlockIndexDB()
     if (!pblocktree->LoadBlockIndexGuts())
         return false;
 
-printAffairs();
+    printAffairs();
+
+    // Start timer
+    auto start = std::chrono::high_resolution_clock::now();
+
     LinkOrphans();
-printAffairs();
+
+    // Stop timer and calculate duration
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+
+    LogPrintf("Time taken by LinkOrphans: %lld microseconds\n", duration.count());
+
+    printAffairs();
 
     boost::this_thread::interruption_point();
 

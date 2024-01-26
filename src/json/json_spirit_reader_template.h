@@ -309,7 +309,7 @@ namespace json_spirit
             }
             else
             {
-                stack_.push_back( current_p_ );
+                stack_.emplace_back( current_p_ );
 
                 Array_or_obj new_array_or_obj;   // avoid copy by building new array or object in place
 
@@ -335,7 +335,7 @@ namespace json_spirit
             }
             else if( current_p_->type() == array_type )
             {
-                current_p_->get_array().push_back( value );
+                current_p_->get_array().emplace_back( value );
 
                 return &current_p_->get_array().back(); 
             }

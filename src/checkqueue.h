@@ -137,7 +137,7 @@ public:
     void Add(std::vector<T> &vChecks) {
         boost::unique_lock<boost::mutex> lock(mutex);
         for (T &check : vChecks) {
-            queue.push_back(T());
+            queue.emplace_back(T());
             check.swap(queue.back());
         }
         nTodo += vChecks.size();

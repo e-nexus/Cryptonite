@@ -27,12 +27,8 @@ static const int64_t nClientStartupTime = GetTime();
 
 ClientModel::ClientModel(OptionsModel *optionsModel, QObject *parent) :
     QObject(parent), optionsModel(optionsModel), peerTableModel(0),
-    cachedNumBlocks(0), cachedNumHeaders(0),
-    cachedReindexing(0), cachedImporting(0),
-    cachedTrieOnline(0), cachedTotalMissing(0),
-    cachedTrieComplete(0), cachedValidating(0),
-    cachedProgress(0), nProgress(0),
-    numBlocksAtStartup(-1), pollTimer(0)
+    cachedState({0, 0, 0, 0, false, false, false, false, 0.0}),
+    nProgress(0), numBlocksAtStartup(-1), pollTimer(0)
 {
     peerTableModel = new PeerTableModel(this);
     pollTimer = new QTimer(this);
@@ -138,35 +134,25 @@ double ClientModel::getVerificationProgress() const
     return Checkpoints::GuessVerificationProgress(chainActive.Tip());
 }
 
-void ClientModel::updateTimer()
-{
-    // Some quantities (such as number of blocks) change so fast that we don't want to be notified for each change.
-    // Periodically check and update with a timer.
-    int newNumBlocks = getNumBlocks();
-    int newNumHeaders = getNumHeaders();
-    int totalMissing = getTotalMissing();
-    int trieComplete = getTrieComplete();
+void ClientModel::updateTimer() {
+    // Create a new state
+    ClientModelState newState = {
+        getNumBlocks(),
+        getNumHeaders(),
+        getTotalMissing(),
+        getTrieComplete(),
+        fReindex,
+        fImporting,
+        fTrieOnline,
+        fValidating,
+        nProgress
+    };
 
-    //printf("Tick\n");
-
-    // check for changed number of blocks we have, number of blocks peers claim to have, reindexing state and importing state
-    if (cachedNumBlocks != newNumBlocks || cachedNumHeaders != newNumHeaders ||
-        cachedReindexing != fReindex || cachedImporting != fImporting || cachedTrieOnline != fTrieOnline ||
-	cachedTotalMissing != totalMissing || cachedTrieComplete != trieComplete || cachedValidating != fValidating ||
-	cachedProgress != nProgress)
-    {
-        cachedNumBlocks = newNumBlocks;
-        cachedNumHeaders = newNumHeaders;
-	cachedTotalMissing = totalMissing;
-        cachedReindexing = fReindex;
-        cachedImporting = fImporting;
-	cachedTrieOnline = fTrieOnline;
-	cachedTrieComplete = trieComplete;
-	cachedValidating = fValidating;
-	cachedProgress = nProgress;
-
-        // ensure we return the maximum of newNumBlocksTotal and newNumBlocks to not create weird displays in the GUI
-        Q_EMIT numBlocksChanged(newNumBlocks, newNumHeaders);
+    // Compare the new state with the old one
+    if (memcmp(&cachedState, &newState, sizeof(ClientModelState)) != 0) {
+        // If they're different, update the old state and emit signals
+        memcpy(&cachedState, &newState, sizeof(ClientModelState));
+        Q_EMIT numBlocksChanged(cachedState.numBlocks, cachedState.numHeaders);
     }
 
     Q_EMIT bytesChanged(getTotalBytesRecv(), getTotalBytesSent());
@@ -262,8 +248,8 @@ QString ClientModel::dataDir() const
 // Handlers for core signals
 static void NotifyBlocksChanged(ClientModel *clientmodel)
 {
-    // This notification is too frequent. Don't trigger a signal.
-    // Don't remove it, though, as it might be useful later.
+ // This notification is too frequent. Don't trigger a signal.
+ // Don't remove it, though, as it might be useful later.
 }
 
 static void NotifyNumConnectionsChanged(ClientModel *clientmodel, int newNumConnections)

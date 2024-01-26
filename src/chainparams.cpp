@@ -64,7 +64,7 @@ public:
         bnProofOfWorkLimit = ~uint256(0) >> 20;
         nSubsidyHalvingInterval = 210000;
 
-//printf("Target: %s\n", GetTargetWork(4096.0).GetHex().c_str()); exit(0);
+        //printf("Target: %s\n", GetTargetWork(4096.0).GetHex().c_str()); exit(0);
 
         // Build the genesis block. Note that the output of the genesis coinbase cannot
         // be spent as it did not originally exist in the database.
@@ -80,21 +80,21 @@ public:
         txNew.vout[0].nValue = MAX_MONEY; //All coins created in genesis
         txNew.vout[0].pubKey = 0; //Genesis target is coinbase
         txNew.nLockHeight=0;	
-	string msg = "2014/07/27 - Epoch Times - How Bitcoin Compares...";
-	txNew.msg = vector<char>(msg.begin(),msg.end());
-	genesis.vtx.push_back(txNew);
+	    string msg = "2014/07/27 - Epoch Times - How Bitcoin Compares...";
+	    txNew.msg = vector<char>(msg.begin(),msg.end());
+	    genesis.vtx.push_back(txNew);
         genesis.hashPrevBlock = 0;
         genesis.hashMerkleRoot = genesis.BuildMerkleTree();
 
-	//Build a single trienode to find the hash of the coinbase only trie
-	TrieNode *coinbase = new TrieNode(NODE_LEAF);
-	coinbase->SetKey(0);
-	coinbase->SetBalance(txNew.vout[0].nValue);
+        //Build a single trienode to find the hash of the coinbase only trie
+        TrieNode *coinbase = new TrieNode(NODE_LEAF);
+        coinbase->SetKey(0);
+        coinbase->SetBalance(txNew.vout[0].nValue);
 
-	genesis.hashAccountRoot = coinbase->Hash(); //TODO: get the trie hash
-	delete coinbase;
+        genesis.hashAccountRoot = coinbase->Hash(); //TODO: get the trie hash
+        delete coinbase;
         genesis.nVersion = 1;
-	genesis.nHeight  = 0;
+	    genesis.nHeight  = 0;
         genesis.nTime    = 1406509200;
         genesis.nNonce   = 1041215929;
 

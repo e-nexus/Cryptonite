@@ -262,7 +262,7 @@ public:
         assert(vchSecret.IsValid());
         SetData(Params().Base58Prefix(CChainParams::SECRET_KEY), vchSecret.begin(), vchSecret.size());
         if (vchSecret.IsCompressed())
-            vchData.push_back(1);
+            vchData.emplace_back(1);
     }
 
     CKey GetKey()
