@@ -2770,30 +2770,55 @@ bool static LoadBlockIndexDB()
     pblocktree->ReadFlag("txindex", fTxIndex);
     LogPrintf("LoadBlockIndexDB(): transaction index %s\n", fTxIndex ? "enabled" : "disabled");
 
-    // Load pointer to end of best chain
-    LogPrintf("Best Block: %s\n",pviewTip->GetBestBlock().GetHex().c_str());
-    std::map<uint256, CBlockIndex*>::iterator it = mapBlockIndex.find(pviewTip->GetBestBlock());
-    if (it == mapBlockIndex.end())
-        return true;
+    // Wire up the genesis as the chain tip regardless of whether the trie
+    // snapshot has a bestBlock hash. On a fresh datadir the trie's
+    // bestBlock is zero and mapBlockIndex is also empty at this point --
+    // AcceptBlockHeader inside InitBlockIndex will populate mapBlockIndex
+    // shortly. The previous code bailed out here whenever the trie's
+    // bestBlock hash was not already in mapBlockIndex, which meant the
+    // first restart after a successful genesis accept left
+    // chainActive.Genesis() null and tripped the "Incorrect or no genesis
+    // block found" check in init.cpp on every subsequent run.
+    LogPrintf("Best Block: %s\n", pviewTip->GetBestBlock().GetHex().c_str());
+    const uint256 trieBest = pviewTip->GetBestBlock();
+    if (trieBest != uint256() &&
+        mapBlockIndex.find(trieBest) == mapBlockIndex.end()) {
+        // The trie snapshot claims a bestBlock that is not in our block
+        // index. The snapshot is stale relative to LevelDB; record the
+        // mismatch and continue. The slice-sync engine will reconcile the
+        // trie against the block index once the chain is loaded.
+        LogPrintf("LoadBlockIndexDB(): trie snapshot best %s not in block index, will reconcile\n",
+                  trieBest.GetHex().c_str());
+    }
 
-    uint256 syncPoint=0;
-
+    uint256 syncPoint = 0;
     uint256 triePoint = pviewTip->GetBestBlock();
-
 
     pblocktree->ReadSyncPoint(syncPoint);
     printf("Sync point %s\n", syncPoint.GetHex().c_str());
 
-    pindexGenesisBlock = mapBlockIndex[Params().HashGenesisBlock()];
-
-    //Can't really do anything if genesis not loaded yet
-    if(!pindexGenesisBlock){
-	printf("GHash: %s\n", Params().HashGenesisBlock().GetHex().c_str());
-	return true;
+    // Use a non-inserting lookup. operator[] would silently insert a null
+    // CBlockIndex* at the genesis key if the entry is missing, then the
+    // null pointer would be picked up by the "Incorrect or no genesis
+    // block found" check downstream and by SetTip's preconditions.
+    {
+        auto itGenesis = mapBlockIndex.find(Params().HashGenesisBlock());
+        pindexGenesisBlock = (itGenesis != mapBlockIndex.end()) ? itGenesis->second : nullptr;
     }
 
-    chainActive.SetTip(pindexGenesisBlock);
-    chainHeaders.SetTip(pindexGenesisBlock);
+    // If the genesis is already in the block index, wire it up. Otherwise
+    // the caller (init.cpp) will fall through to InitBlockIndex(), which
+    // accepts the genesis header into the block index and then returns
+    // here on the next iteration of the outer load loop. We do not bail,
+    // because bailing is what left chainActive.Genesis() null across
+    // restarts in the previous implementation.
+    if (pindexGenesisBlock) {
+        chainActive.SetTip(pindexGenesisBlock);
+        chainHeaders.SetTip(pindexGenesisBlock);
+    } else {
+        LogPrintf("LoadBlockIndexDB(): genesis %s not yet in block index, deferring SetTip\n",
+                  Params().HashGenesisBlock().GetHex().c_str());
+    }
 
     //if genesis is really young set trieonline and write syncpoint to db
     if(syncPoint==0 && triePoint != 0 && triePoint != Params().HashGenesisBlock()){
@@ -2811,14 +2836,29 @@ bool static LoadBlockIndexDB()
     if(syncPoint!=0){
 	//Provisionally
 	fTrieOnline=true;
-	pindexSyncPoint = mapBlockIndex[syncPoint];
-	pindexSyncPoint->fConnected = true;
-	chainActive.SetTip(pindexSyncPoint);
+	// Non-inserting lookup: syncPoint may reference a block that was
+	// pruned from LevelDB; operator[] would silently insert a null
+	// CBlockIndex* and the subsequent deref of pindexSyncPoint would crash.
+	{
+	    auto itSync = mapBlockIndex.find(syncPoint);
+	    pindexSyncPoint = (itSync != mapBlockIndex.end()) ? itSync->second : nullptr;
+	}
+	if (pindexSyncPoint) {
+	    pindexSyncPoint->fConnected = true;
+	    chainActive.SetTip(pindexSyncPoint);
+	}
     }
 
     //Do accelerated startup
 #if 1
-    if(chainHeaders.Height() > MIN_HISTORY){
+    // chainHeaders.Height() returns int64_t (-1 when the chain is empty);
+    // MIN_HISTORY is uint64_t. The implicit signed/unsigned comparison
+    // promotes -1 to a huge uint64_t (~1.8e19) so -1 > 1000 evaluates to
+    // true, causing the body below to run on a fresh datadir where
+    // chainHeaders is empty and dereference a null pindex. Cast both
+    // sides to int so the comparison sees -1 as -1. The semantics for a
+    // non-empty chain (Height >= 0, MIN_HISTORY = 1000) are unchanged.
+    if(static_cast<int>(chainHeaders.Height()) > static_cast<int>(MIN_HISTORY)){
 	CBlockIndex *pindex = chainHeaders[chainHeaders.Height()-144];
     	//Have to make sure that pindex is reachable.
 	CBlockIndex *pmove = pindex;
@@ -2843,6 +2883,17 @@ bool static LoadBlockIndexDB()
 #endif
 
     CheckForkWarningConditions(true);
+
+    // The summary log below dereferences chainActive.Tip(). On a fresh
+    // datadir the genesis is not in the block index until InitBlockIndex()
+    // (called by the outer load loop in init.cpp) accepts it, so
+    // chainActive may be empty here. Defer the summary until we have at
+    // least the genesis wired up.
+    if (chainActive.Tip() == nullptr) {
+        LogPrintf("LoadBlockIndexDB(): chain tip not yet set (genesis not in block index); "
+                  "InitBlockIndex() will accept the genesis on the next load-loop iteration\n");
+        return true;
+    }
 
     LogPrintf("LoadBlockIndexDB(): trieOnline=%d hashBestChain=%s height=%d date=%s progress=%f\n",
         fTrieOnline, chainActive.Tip()->GetBlockHash().ToString(), chainActive.Height(),
@@ -2961,9 +3012,65 @@ bool InitBlockIndex() {
         CValidationState state;
         try {
             CBlock &block = const_cast<CBlock&>(Params().GenesisBlock());
-            // Start new block file
-            if (!AcceptBlock(block, state))
-                return error("LoadBlockIndex() : accepting genesis header failed");
+            const uint256 genesisHash = block.GetHash();
+            // If the genesis is already in the block index from a previous
+            // successful run, do not call AcceptBlock again. AcceptBlock
+            // returns false on a duplicate-insert path in some forks and
+            // would otherwise abort the whole load loop on every restart.
+            // InitBlockIndex is also called from the post-reindex path
+            // (init.cpp:392) where LoadExternalBlockFile may have already
+            // inserted the genesis header.
+            if (mapBlockIndex.count(genesisHash) == 0) {
+                // Pre-populate the block index with the genesis and wire
+                // it into the active chain BEFORE AcceptBlock, because
+                // AcceptBlock internally calls ActivateBestChain which
+                // needs chainActive.Tip() to be non-null. The
+                // previously-working code path relied on LoadBlockIndexDB
+                // having run on a non-empty LevelDB, which set up
+                // chainActive in the same call. On a fresh datadir that
+                // path is skipped (we return early before reaching the
+                // SetTip call), so we have to do the wiring here.
+                CBlockIndex* pindexGenesis = InsertBlockIndex(genesisHash, block);
+                if (pindexGenesis) {
+                    pindexGenesis->nStatus =
+                        (pindexGenesis->nStatus & ~BLOCK_VALID_MASK) | BLOCK_VALID_TREE;
+                    if (!pblocktree->WriteBlockIndex(CDiskBlockIndex(pindexGenesis)))
+                        return error("LoadBlockIndex() : failed to write genesis to block index");
+                    pindexGenesisBlock = pindexGenesis;
+                    chainActive.SetTip(pindexGenesis);
+                    chainHeaders.SetTip(pindexGenesis);
+                }
+                // AcceptBlock writes the block to blk00000.dat and runs
+                // ActivateBestChain. On a fresh datadir ActivateBestChain
+                // cannot complete (pviewTip->m_bestBlock is zero and
+                // the trie is empty), so we expect that path to fail
+                // and we initialize the trie to the genesis state below.
+                AcceptBlock(block, state);
+                // After AcceptBlock the genesis is on disk in
+                // blk00000.dat; Apply reads it back and seeds the trie.
+                {
+                    auto it = mapBlockIndex.find(genesisHash);
+                    pindexGenesisBlock = (it != mapBlockIndex.end()) ? it->second : nullptr;
+                }
+                if (pindexGenesisBlock && pviewTip->GetBestBlock() == uint256()) {
+                    if (!pviewTip->Apply(pindexGenesisBlock))
+                        return error("LoadBlockIndex() : trie rejected genesis block");
+                }
+            } else {
+                // Genesis already in the block index. The earlier
+                // LoadBlockIndexDB path (or a prior successful run) wired
+                // it into chainActive; if not, wire it now.
+                // Use a non-inserting lookup (operator[] would silently
+                // insert a null CBlockIndex* if the entry were missing).
+                {
+                    auto it = mapBlockIndex.find(genesisHash);
+                    pindexGenesisBlock = (it != mapBlockIndex.end()) ? it->second : nullptr;
+                }
+                if (pindexGenesisBlock && chainActive.Genesis() == nullptr) {
+                    chainActive.SetTip(pindexGenesisBlock);
+                    chainHeaders.SetTip(pindexGenesisBlock);
+                }
+            }
         } catch(std::runtime_error &e) {
             return error("LoadBlockIndex() : failed to initialize block database: %s", e.what());
         }

@@ -82,12 +82,18 @@ public:
     bool HashForBlock(CBlock block, uint256 &hash);
     uint32_t GetSlice(uint256 block, uint160 left, uint160 right, uint8_t *buf, uint32_t sz, uint32_t *nodes);
 
+    // Apply a block to the in-memory trie, generating undo data and
+    // writing the trie state. Exposed (non-private) so the genesis init
+    // path in InitBlockIndex can seed an empty trie on a fresh datadir
+    // without going through ActivateBestChain (which requires a
+    // non-zero m_bestBlock to be already in mapBlockIndex).
+    bool Apply(CBlockIndex *pindex);
+
 private:
     bool TempApply(CBlock block, list<CTxUndo> &undos);
     bool Unapply(list<CTxUndo> &undos);
 
     uint256 m_bestBlock;
-    bool Apply(CBlockIndex *pindex);
     TrieNode *m_root;
 };
 

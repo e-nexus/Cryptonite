@@ -916,21 +916,16 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         } while(false);
 
         if (!fLoaded) {
-            // first suggest a reindex
-            if (!fReset) {
-                bool fRet = uiInterface.ThreadSafeMessageBox(
-                    strLoadError + ".\n\n" + _("Do you want to rebuild the block database now?"),
-                    "", CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
-                if (fRet) {
-                    fReindex = true;
-                    fRequestShutdown = false;
-                } else {
-                    LogPrintf("Aborted block database rebuild. Exiting.\n");
-                    return false;
-                }
-            } else {
-                return InitError(strLoadError);
-            }
+            // No interactive rebuild prompt. The headless (noui) message
+            // box handler always returns false with no way for the user
+            // to respond, so prompting is a no-op that leaves the operator
+            // staring at a question they cannot answer. Log the failure
+            // with the exact reason and a suggestion, then exit. If the
+            // operator wants to rebuild, they can re-run with -reindex
+            // on the command line.
+            LogPrintf("Aborted block database load: %s\n", strLoadError.c_str());
+            LogPrintf("To rebuild the block database, restart with -reindex.\n");
+            return InitError(strLoadError + ". Pass -reindex to rebuild.");
         }
     }
 
