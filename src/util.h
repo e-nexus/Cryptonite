@@ -35,6 +35,53 @@
 class CNetAddr;
 class uint256;
 
+/**
+ * Internal-logic assertions. These MUST NEVER be used to validate user,
+ * network, or RPC input: a malformed block or a hostile peer message must
+ * not be able to abort() a production daemon.
+ *
+ * - Assert(cond, msg)       : documents an invariant whose violation means
+ *                              the program is faulty. Aborts in debug builds;
+ *                              throws std::runtime_error in release builds so
+ *                              the surrounding try/catch (or our default
+ *                              LogWarning-and-continue wrapper) can keep the
+ *                              node running.
+ * - CheckNonFatal(cond, msg): always throws std::runtime_error; same shape
+ *                              as Assert() but never aborts. Use for
+ *                              recoverable internal-logic bugs that callers
+ *                              want to catch.
+ * - Assume(cond)            : documents an assumption the program can
+ *                              survive being violated. Asserts in debug,
+ *                              compiled out in release.
+ *
+ * The release-build throw behaviour is the deliberate defence-in-depth fix:
+ * the project's prior use of raw assert() in consensus/RPC/P2P hot paths
+ * turned any malformed message into a remote DoS vector (the same class of
+ * bug behind CVE-2018-17144 and CVE-2013-5700 in upstream Bitcoin Core).
+ */
+#define Assert(cond, msg)                                                   \
+    do {                                                                    \
+        if (!(cond)) {                                                      \
+            std::string _assert_msg = std::string("ASSERTION FAILED: ")      \
+                + std::string(msg)                                          \
+                + std::string(" at ")                                       \
+                + std::string(__FILE__)                                     \
+                + std::string(":")                                          \
+                + std::to_string(__LINE__)                                  \
+                + std::string("\n");                                        \
+            LogPrintStr(_assert_msg);                                       \
+            throw std::runtime_error(msg);                                  \
+        }                                                                   \
+    } while (0)
+
+#define CheckNonFatal(cond, msg) Assert(cond, msg)
+
+#ifdef DEBUG_ASSUME
+#define Assume(cond) Assert(cond, "Assumption violated")
+#else
+#define Assume(cond) ((void)0)
+#endif
+
 static const uint64_t COIN = 10000000000;
 static const uint64_t CENT = 100000000;
 static const uint64_t COINS = UINT64_MAX/COIN;

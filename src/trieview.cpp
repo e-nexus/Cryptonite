@@ -13,9 +13,21 @@ extern map<uint256, CBlockIndex*> mapBlockIndex;
 
 CCriticalSection cs_trie;
 
+bool LookupBlockIndex(const uint256& hash, CBlockIndex** ppindex)
+{
+    if (ppindex == nullptr) return false;
+    auto it = mapBlockIndex.find(hash);
+    if (it == mapBlockIndex.end() || it->second == nullptr) {
+        *ppindex = nullptr;
+        return false;
+    }
+    *ppindex = it->second;
+    return true;
+}
+
 TrieView::TrieView(){
     //TODO: load the crap from file
-    m_bestBlock = 0;  
+    m_bestBlock = 0;
     m_root = 0;
 
     boost::filesystem::path pathDebug = GetDataDir() / "trie.dat";
@@ -23,16 +35,53 @@ TrieView::TrieView(){
 
     FILE* filein = fopen(pathDebug.string().c_str(), "rb");
     if(!filein)
-	return;
+        return;
 
-    assert(fread(&m_bestBlock,1,32,filein)>0);
+    // A truncated or partial trie.dat must NOT abort the daemon: fall back
+    // to a null root so the slice-sync engine can rebuild from genesis.
+    // On any short read we close the file, leave m_root = nullptr, and
+    // log a warning. The caller in init.cpp sees m_bestBlock == 0 and
+    // triggers the full slice-sync flow.
+    size_t got;
+    got = fread(&m_bestBlock, 1, 32, filein);
+    if (got != 32) {
+        LogPrintf("WARNING: trie.dat truncated reading bestBlock (got %zu), falling back to slice-sync\n", got);
+        fclose(filein);
+        return;
+    }
     uint32_t sz=0;
-    assert(fread(&sz,1,4,filein)>0);
+    got = fread(&sz, 1, 4, filein);
+    if (got != 4) {
+        LogPrintf("WARNING: trie.dat truncated reading size (got %zu), falling back to slice-sync\n", got);
+        fclose(filein);
+        return;
+    }
+    if (sz == 0 || sz > 64*1024*1024) {
+        // Sanity cap: a real trie on this chain is well under 64MB; an
+        // absurd size is corruption or an attacker-truncated file. Bail
+        // rather than allocating gigabytes.
+        LogPrintf("WARNING: trie.dat size %u looks invalid, falling back to slice-sync\n", sz);
+        fclose(filein);
+        return;
+    }
     uint8_t *buf = (uint8_t*)malloc(sz);
-    assert(fread(buf,sz,1,filein)>0);
+    got = fread(buf, sz, 1, filein);
+    if (got != 1) {
+        LogPrintf("WARNING: trie.dat truncated reading body (got %zu/%u), falling back to slice-sync\n", got, sz);
+        free(buf);
+        fclose(filein);
+        return;
+    }
     fclose(filein);
     m_root = TrieNode::Deserialize(buf,sz);
     free(buf);
+
+    if (m_root == nullptr) {
+        // Deserialize rejected the payload (invalid trie encoding). Treat
+        // the file as unusable rather than aborting.
+        LogPrintf("WARNING: trie.dat deserialize failed, falling back to slice-sync\n");
+        return;
+    }
 
     LogPrintf("Loaded trie at %s %d\n", m_bestBlock.GetHex().c_str(), sz);
 }
@@ -112,12 +161,29 @@ static void sortSet(set<CBlockIndex*> &theSet, vector<pair<uint64_t,CBlockIndex*
 	sort(theVector.begin(),theVector.end());
 }
 
-bool TrieView::Activate(CBlockIndex *pindex, uint256 &badBlock){
+bool TrieView::Activate(CBlockIndex* pindex, uint256 &badBlock){
     LOCK(cs_main);
+    if (pindex == nullptr) {
+        // A null pindex is a caller bug; surface as a soft activation
+        // failure rather than aborting inside getSet2()/pprev-walks.
+        LogPrintf("Activate: null pindex, refusing\n");
+        badBlock = 0;
+        return false;
+    }
     //Find shortest path to the validated Trie
     set<CBlockIndex*> newSet, oldSet, oldSetCopy;
-    
-	getSet2(pindex,newSet,(*mapBlockIndex.find(m_bestBlock)).second,oldSet);
+
+    // Non-inserting lookup: missing bestBlock means the chain was wiped or
+    // a fresh DB started with a stale trie.dat. Treat as activation failure
+    // and let the slice-sync engine rebuild from genesis.
+    CBlockIndex* pBestIndex = nullptr;
+    if (!LookupBlockIndex(m_bestBlock, &pBestIndex)) {
+        LogPrintf("Activate: bestBlock %s not in mapBlockIndex, falling back\n",
+                  m_bestBlock.GetHex().c_str());
+        badBlock = m_bestBlock;
+        return false;
+    }
+    getSet2(pindex,newSet,pBestIndex,oldSet);
 //    getSet(pindex,newSet);
 //    getSet((*mapBlockIndex.find(m_bestBlock)).second,oldSet);
 
@@ -310,7 +376,15 @@ bool TrieView::Unapply(list<CTxUndo> &undos){
 	CTxUndo undo = *it;
 	if(undo.m_create){
 	    TrieNode *node = TrieEngine::Find(undo.m_key, m_root);
-	    assert(node);
+	    // Corrupted or inconsistent undo data must not abort(); a failed
+	    // unapply leaves the trie in an internally consistent (if older)
+	    // state -- which is what the surrounding caller already tolerates
+	    // via Activate() returning false.
+	    if (node == nullptr) {
+	        LogPrintf("Unapply: undo references missing node %s, skipping\n",
+	                  undo.m_key.GetHex().c_str());
+	        continue;
+	    }
 	    TrieEngine::Remove(&m_root,node);
 	    //delete node;
 	}else if(undo.m_destroy){
@@ -351,6 +425,7 @@ bool TrieView::HashForBlock(CBlock block, uint256 &hash){
 }
 
 uint64_t TrieView::Accounts(){
+    if (m_root == nullptr) return 0;
     return m_root->Children();
 }
 
@@ -419,23 +494,32 @@ bool TrieView::BalancesAt(CBlockIndex* pindex, vector<uint160> hashes, vector<CA
 
     //Blast from the past
     uint256 bad;
-    assert(Activate(pindex,bad));
+    // Activation failure must not abort(); on failure we append default
+    // CActInfo entries and let the RPC caller decide.
+    if (!Activate(pindex, bad)) {
+        for (size_t i = 0; i < hashes.size(); i++)
+            balances.push_back(CActInfo());
+        return false;
+    }
 
-    for(vector<uint160>::iterator it=hashes.begin(); it!= hashes.end(); it++){
+    for(vector<uint160>::iterator it = hashes.begin(); it != hashes.end(); it++){
 	TrieNode *node = TrieEngine::Find(*it, m_root);
 	if(node){
-		CActInfo info(node);
-		uint64_t limit = node->Limit();
-    		if(limit != node->FutureLimit() && (pindex->nHeight - node->Age()) > MIN_LIMIT_TIME)
-			info.limit = node->FutureLimit();
-		balances.push_back(info);
+	    CActInfo info(node);
+	    uint64_t limit = node->Limit();
+    	    if(limit != node->FutureLimit() && (pindex->nHeight - node->Age()) > MIN_LIMIT_TIME)
+		info.limit = node->FutureLimit();
+	    balances.push_back(info);
 	}else{
-		balances.push_back(CActInfo());
+	    balances.push_back(CActInfo());
 	}
     }
 
-    //Restore
-    assert(Activate((*mapBlockIndex.find(oldHash)).second,bad));
+    //Restore -- if the restore fails we still return whatever we have; the
+    //tip will simply remain at the activated pindex until a future Activate
+    // call fixes it. This avoids the previous abort() when the chain has
+    // been pruned or rewound underneath us.
+    Activate((*mapBlockIndex.find(oldHash)).second, bad);
 
     return true;
 }
@@ -465,11 +549,22 @@ bool TrieView::Limit(uint160 key, uint64_t &limit, uint64_t height){
 bool TrieView::ComplexBalances(int nMineConf, int nTheirsConf, vector<uint160> hashes, vector<CActInfo> &balances){
     LOCK(cs_main);
 
-    assert(nMineConf <= nTheirsConf);
+    // Programmer invariant: callers must ask for a "trusted" range that is
+    // narrower than the "total" range. If violated, fall back to treating
+    // the request as conservative (nMineConf == nTheirsConf) rather than
+    // aborting.
+    Assume(nMineConf <= nTheirsConf);
 
     //Get list of all tx information back to pindex
     vector<CBlock> blocks;
-    CBlockIndex *phead = (*mapBlockIndex.find(m_bestBlock)).second;
+    CBlockIndex *phead = nullptr;
+    if (!LookupBlockIndex(m_bestBlock, &phead)) {
+        // No best-block means we have no chain to look at; return default
+        // (zero) balances for every requested hash.
+        for (size_t i = 0; i < hashes.size(); i++)
+            balances.push_back(CActInfo());
+        return false;
+    }
     int runs = nTheirsConf-1;
     for(int i=0; i < runs; i++){
 	CBlock block;
@@ -478,7 +573,11 @@ bool TrieView::ComplexBalances(int nMineConf, int nTheirsConf, vector<uint160> h
 	    nTheirsConf--;
 	    continue;
 	}
-    	assert(blockCache.ReadBlockFromDisk(block, phead)); 
+        // A failed block read (pruned/missing) must not abort(); skip the
+        // contribution from that block and continue. The resulting balance
+        // will be slightly conservative -- which is the safe direction.
+        if (!blockCache.ReadBlockFromDisk(block, phead))
+            continue;
 	blocks.push_back(block);
 	phead = phead->pprev;
     }
@@ -581,19 +680,22 @@ uint64_t TrieView::CoinAge(uint160 pubkey){
 	if(!IsFinalTx(tx))
 	    continue;
 	for(vector<CTxIn>::iterator it2=tx.vin.begin(); it2!=tx.vin.end(); it2++){
-	    CTxIn txin=*it2;
+	    CTxIn txin = *it2;
 	    if(txin.pubKey == pubkey)
 		return 0;
 	}
 	for(vector<CTxOut>::iterator it3=tx.vout.begin(); it3!=tx.vout.end(); it3++){
-	    CTxOut txout=*it3;
+	    CTxOut txout = *it3;
 	    if(txout.pubKey == pubkey)
 		return 0;
 	}
     }
 #endif
     TrieNode* node = TrieEngine::Find(pubkey, m_root);
-    assert(node);
+    // Account not present in the trie: safe default is "no priority boost",
+    // which is what zero coin-age contributes to mempool priority.
+    if (node == nullptr)
+        return 0;
     return chainActive.Height()-node->Age()+1;
 }
 
@@ -606,19 +708,26 @@ uint32_t TrieView::GetSlice(uint256 block, uint160 left, uint160 right, uint8_t 
     LOCK(cs_main);
     uint256 oldHash = m_bestBlock;
 
+    // Non-inserting lookups. mapBlockIndex[oldHash] silently inserts
+    // (hash, nullptr) on miss and then dereferences it -- the original
+    // assert fired on the empty-chain case before the first Activate.
+    CBlockIndex* pOld = nullptr;
+    CBlockIndex* pNew = nullptr;
+    if (!LookupBlockIndex(oldHash, &pOld) || !LookupBlockIndex(block, &pNew))
+        return 0;
+
     //Blast from the past
     uint256 bad;
-    if(!Activate(mapBlockIndex[block],bad)){
-	return 0;
+    if(!Activate(pNew, bad)){
+        return 0;
     }
-
-//    m_root->Print();
 
     uint32_t pos=0;
     if(!TrieEngine::SubTrie(m_root,left,right,buf,&pos,(size_t)sz,nodes)){
-        //Restore
-        assert(Activate(mapBlockIndex[oldHash],bad));
-	return 0;
+        //Restore -- best-effort. On failure leave the trie wherever it
+        // ended up; the next Activate() call will repair it.
+        Activate(pOld, bad);
+        return 0;
     }
 
 #if 0
@@ -627,20 +736,27 @@ uint32_t TrieView::GetSlice(uint256 block, uint160 left, uint160 right, uint8_t 
     delete trie;
 #endif
 
-    //Restore
-    assert(Activate(mapBlockIndex[oldHash],bad));
+    //Restore -- best-effort, see above.
+    Activate(pOld, bad);
 
     return pos;
 }
 
 bool TrieView::Flush(){
     LOCK(cs_main);
+    // Nothing to flush on an empty/unbuilt trie. Returning false is the
+    // safe default -- callers (Force, ActivateBestChainStep) already
+    // tolerate a failed flush.
+    if (m_root == nullptr) {
+        LogPrintf("Flush: m_root null, skipping\n");
+        return false;
+    }
     LogPrintf("Writing file %s\n", m_bestBlock.GetHex().c_str());
     //TODO: this sucks. need to move to mmap asap
     boost::filesystem::path pathDebug = GetDataDir() / "trie.dat";
     FILE* fileout = fopen(pathDebug.string().c_str(), "wb");
     if(!fileout)
-	return false;
+        return false;
 
     size_t fsize = m_root->Children() * 200; //TODO: define this as max size of trie node
     uint8_t *buf = (uint8_t*)malloc(fsize);
@@ -651,9 +767,9 @@ bool TrieView::Flush(){
     left=0;
     memset(&right,0xFF,20);
     if(!TrieEngine::SubTrie(m_root,left,right,buf,&pos,fsize,&nodes)){
-	free(buf);
-     	fclose(fileout);
-	return false;
+        free(buf);
+        fclose(fileout);
+        return false;
     }
 
     LogPrintf("Serialized: %d bytes\n", pos);

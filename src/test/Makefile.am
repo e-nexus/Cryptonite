@@ -58,6 +58,7 @@ test_cryptonite_SOURCES = \
   netbase_tests.cpp \
   rpc_tests.cpp \
   serialize_tests.cpp \
+  trie_safety_tests.cpp \
   uint256_tests.cpp \
   util_tests.cpp \
   test_cryptonite.cpp \

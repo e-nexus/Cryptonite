@@ -388,7 +388,12 @@ Value getwork(const Array& params, bool fHelp)
         pblock->nNonce = pdata->nNonce;
         pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 
-        assert(pwalletMain != nullptr);
+        // getwork submit requires an active wallet (CheckWork dereferences
+        // it). Reject the request rather than aborting on a --disable-wallet
+        // build.
+        if (!pwalletMain)
+            throw JSONRPCError(RPC_WALLET_ERROR, "getwork submit requires a wallet");
+
         double nBits = GetNextWorkRequired(chainActive.Tip(),pblock);
         uint256 hashTarget = GetTargetWork(nBits);
         uint256 hash = pblock->GetHash();

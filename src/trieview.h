@@ -7,6 +7,9 @@
 
 #include "trie.h"
 
+class CBlockIndex;
+class uint256;
+
 class CTxUndo {
 public:
     CTxUndo(){}
@@ -62,13 +65,13 @@ public:
 class TrieView {
 public:
     TrieView();
- 
+
     void Force(TrieNode* root, uint256 hash);
     bool Flush();
-    uint256 GetBestBlock() { return m_bestBlock;} 
+    uint256 GetBestBlock() { return m_bestBlock;}
     bool HaveInputs(const CTransaction &tx) { return true; }
     bool SetBestBlock(uint256) { return true; }
-    bool Activate(CBlockIndex* pindex, uint256 &badBlock); 
+    bool Activate(CBlockIndex* pindex, uint256 &badBlock);
     bool Balance(uint160 key, uint64_t &balance);
     bool Limit(uint160 key, uint64_t &limit, uint64_t height);
     bool BalancesAt(CBlockIndex* pindex, vector<uint160> hashes, vector<CActInfo> &balances);
@@ -87,5 +90,18 @@ private:
     bool Apply(CBlockIndex *pindex);
     TrieNode *m_root;
 };
+
+/**
+ * Non-inserting lookup helper for mapBlockIndex. Returns true and sets
+ * *ppindex on hit; returns false on miss. NEVER use mapBlockIndex[key] to
+ * look up a block: operator[] inserts a default-constructed (i.e. null)
+ * entry on miss, polluting the index and causing the subsequent deref
+ * to crash. The single P2P-driven crash this was responsible for lives
+ * in TrieSync::AcceptSlice.
+ *
+ * Body is in trieview.cpp so we don't pull main.h into this header
+ * (which itself is included by main.h).
+ */
+bool LookupBlockIndex(const uint256& hash, CBlockIndex** ppindex);
 
 #endif //TRIEVIEW_H

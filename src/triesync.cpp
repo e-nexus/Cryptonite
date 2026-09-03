@@ -155,10 +155,21 @@ bool TrieSync::AcceptSlice(CSlice slice){
 	return false;
     }
     //Verify the hash
-    if(root->Hash() != mapBlockIndex[slice.m_block]->hashAccountRoot){	
-	printf("Slice not hash\n");
-	delete root;
-	return false;
+    // Non-inserting lookup. The original operator[] silently inserts
+    // (hash, nullptr) on miss and then dereferences it: a remote DoS where
+    // any peer can crash our node by sending a `slice` referencing a hash
+    // we have never seen. The new helper avoids both the insert and the
+    // deref; on miss we log and reject the slice (the peer earns a DoS
+    // point in the existing bans / nodesTooBig machinery).
+    CBlockIndex* pindexSlice = nullptr;
+    if (!LookupBlockIndex(slice.m_block, &pindexSlice) || pindexSlice == nullptr) {
+        printf("Slice not hash (unknown block %s)\n", slice.m_block.GetHex().c_str());
+        return false;
+    }
+    if (root->Hash() != pindexSlice->hashAccountRoot) {
+        printf("Slice not hash\n");
+        delete root;
+        return false;
     }
 
     bool valid = TrieEngine::Prove(root,slice.m_left,slice.m_right);
@@ -406,12 +417,26 @@ TrieNode* TrieSync::Build(uint256 &block){
 	if(last_height != 0){
 	    for(uint64_t nHeight=last_height; nHeight <= (uint64_t)pair.first->nHeight; nHeight++){
 		CBlock block;
-		blockCache.ReadBlockFromDisk(block,pair.first);
+		// ReadBlockFromDisk must not silently fail: a pruned / missing
+		// block here means we cannot reconstruct this slice's history.
+		// Skip this Build attempt (the caller in init.cpp will retry);
+		// do not continue running with stale state. Note: `slice` is a
+		// borrowed pointer from the slices multimap -- we must NOT delete
+		// it here, that would corrupt the multimap.
+		if (!blockCache.ReadBlockFromDisk(block, pair.first)) {
+		    return nullptr;
+		}
 		ApplyTransactions(data,block);
 	    }
 	}
 	TrieNode *trie = TrieNode::Deserialize(&slice->m_data[0],slice->m_data.size());
-	assert(trie);
+	// Malformed slice data must not abort(); abandon this Build attempt
+	// and let the slice-sync engine retry with the next round. See note
+	// above re: ownership of `slice`.
+	if (trie == nullptr) {
+	    LogPrintf("Build: slice deserialize returned null\n");
+	    return nullptr;
+	}
 	
 	list<TrieNode*> leaves;
 	trie->FindAll(NODE_LEAF,&leaves);

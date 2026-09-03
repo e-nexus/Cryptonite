@@ -149,11 +149,20 @@ bool CBlockCache::ReadBlockFromDiskI(CBlock& block, const CDiskBlockPos& pos)
 bool CBlockCache::ReadTxFromDisk(CTransaction& tx, const CDiskTxPos &disktx){
     LOCK(cs_block);
 
-    //Need blockindex to be able to find tx ?
-    CBlockIndex *pindex= mapBlockIndex[disktx.hashBlock];
+    // Look up the block by hash; missing index must NOT use operator[],
+    // which would silently insert a (hash, nullptr) entry and dereference
+    // it. Missing index means the tx was indexed for a block we no longer
+    // remember (e.g. after a reorg that wiped the index) -- return false.
+    CBlockIndex *pindex = nullptr;
+    auto it = mapBlockIndex.find(disktx.hashBlock);
+    if (it != mapBlockIndex.end())
+        pindex = it->second;
+    if (pindex == nullptr)
+        return error("ReadTxFromDisk: block %s not in mapBlockIndex",
+                     disktx.hashBlock.GetHex().c_str());
     CBlock block;
     if(!ReadBlockFromDisk(block,pindex))
-	return false;
+        return false;
     tx = block.vtx[disktx.nTxOffset];
     return true;
 }
@@ -163,6 +172,12 @@ bool CBlockCache::ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex)
 {
     LOCK(cs_block);
     static int cnt=0;
+
+    // A null pindex is a caller bug, but callers from the trie/RPC paths
+    // can hand one in after a partial failure. Surface it as an error
+    // instead of dereferencing.
+    if (pindex == nullptr)
+        return error("ReadBlockFromDisk: null pindex");
 
     map<uint256,list<CBlock>::iterator>::iterator it = mapBlock.find(pindex->GetBlockHash());
     if(it != mapBlock.end()){

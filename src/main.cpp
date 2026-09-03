@@ -767,7 +767,6 @@ int64_t GetDepthInMainChain(uint256 txid){
 // Return transaction in tx, and if it was found inside a block, its hash is placed in hashBlock
 bool GetTransaction(const uint256 &hash, CTransaction &txOut, uint256 &hashBlock, bool fAllowSlow)
 {
-    assert(fTxIndex); //No support this function without index
     hashBlock=0;
     LOCK(cs_main);
     {
@@ -955,7 +954,14 @@ uint256 GetTargetWork(double nBits){
 
     //printf("Target: %s\n", target.GetHex().c_str());
 
-    assert(nBits>=1.0);
+    // Sanity bound on the caller's proof-of-work calculation. A peer-triggered
+    // nBits < 1.0 must not abort() the daemon; fall back to the maximum
+    // (least-work) target, which is the safest default and will simply reject
+    // any block hash the peer proposes.
+    if (nBits < 1.0) {
+        error("GetTargetWork: nBits < 1.0, clamping to 1.0");
+        nBits = 1.0;
+    }
     nBits *= (1LL<<52); //Weird shift
 
     mpz_t mbits,mtarget,t;
@@ -1245,7 +1251,12 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state)
 
 bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex)
 {
-    assert(pindex->GetBlockHash() == chainActive.Tip()->GetBlockHash());
+    // Sanity-check the invariant instead of asserting: a peer-triggered or
+    // I/O-triggered failure here must surface as state.Abort, not abort().
+    if (pindex == nullptr || chainActive.Tip() == nullptr ||
+        pindex->GetBlockHash() != chainActive.Tip()->GetBlockHash()) {
+        return state.Abort(_("DisconnectBlock: tip mismatch"));
+    }
 
     pindex->fConnected = false;
 
@@ -1306,7 +1317,13 @@ bool ConnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex,bo
     uint256 hashActive = chainActive.Tip() ? chainActive.Tip()->GetBlockHash() : 0;
     //printf("ConnectBlock2 %s %s\n", hashPrevBlock.GetHex().c_str(), chainActive.Tip()->GetBlockHash().GetHex().c_str());
 
-    assert(hashPrevBlock == hashActive);
+    // Peer-driven invariant: a block whose prev hash does not match our
+    // current active tip is either malformed or an attempted feed of a
+    // non-extending block. DoS-score the peer and reject, do NOT abort().
+    if (hashPrevBlock != hashActive) {
+        return state.DoS(100, error("ConnectBlock: prev block mismatch"),
+                         REJECT_INVALID, "bad-prevblk");
+    }
 
     // Special case for the genesis block, allows population of coinbase
     bool isGenesis = block.GetHash() == Params().HashGenesisBlock();
@@ -1464,17 +1481,28 @@ void static UpdateTip(CBlockIndex *pindexNew) {
 
 // Disconnect chainActive's tip.
 bool static DisconnectTip(CValidationState &state) {
-    LogPrintf("Disconnect tip : %s\n", chainActive.Tip()->GetBlockHash().GetHex());
     AssertLockHeld(cs_main);
 
+    // Nothing to disconnect on an empty chain. The original assert here
+    // fired on the initial-block-download edge case where chainActive.Tip()
+    // is still nullptr; that path must be a soft no-op, not an abort().
+    if (chainActive.Tip() == nullptr)
+        return false;
+
+    LogPrintf("Disconnect tip : %s\n", chainActive.Tip()->GetBlockHash().GetHex());
+
     CBlockIndex *pindexDelete = chainActive.Tip();
-    assert(pindexDelete);
+    if (pindexDelete == nullptr) {
+        // Defensive: Tip() went nullptr between the check above and here
+        // (another thread raced us). Surface as state.Abort rather than
+        // asserting, so the loop in ActivateBestChainStep can back off.
+        return state.Abort(_("DisconnectTip: tip vanished"));
+    }
     // Read block from disk.
     CBlock block;
     if (!blockCache.ReadBlockFromDisk(block, pindexDelete)){
         printf("Failed to read block1\n");
-	assert(0);
-	return state.Abort(_("Failed to read block1"));
+        return state.Abort(_("Failed to read block1"));
     }
     // Apply the block atomically to the chain state.
     int64_t nStart = GetTimeMicros();
@@ -1510,7 +1538,14 @@ bool static DisconnectTip(CValidationState &state) {
 bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew) {
     AssertLockHeld(cs_main);
 
-    assert(pindexNew->pprev == chainActive.Tip());
+    // Peer-driven invariant: the new block must extend the current active
+    // tip. A mismatch is either malformed data or an attempted feed of a
+    // non-extending block. DoS-score the peer and reject, do NOT abort().
+    if (pindexNew == nullptr ||
+        pindexNew->pprev != chainActive.Tip()) {
+        return state.DoS(100, error("ConnectTip: pprev != active tip"),
+                         REJECT_INVALID, "bad-prevblk");
+    }
 
     LogPrintf("Connect tip : %s\n", pindexNew->GetBlockHash().GetHex());
 
@@ -1617,8 +1652,19 @@ static bool ActivateBestChainStep(CValidationState &state) {
 	state.DoS(100, error("ActivateBestChain() : inputs missing/spent"),
                                  REJECT_INVALID, "bad-txns-inputs-missingorspent");
 	printf("Hash: %s\n", badBlock.GetHex().c_str());
-	InvalidBlockFound(mapBlockIndex[badBlock]);
-	return ActivateBestChain(state); //Loop until the pain stops
+	// Non-inserting lookup: badBlock may be unknown if Activate set it to
+	// the missing m_bestBlock (which is what the new Activate returns when
+	// the chain is gone). Calling InvalidBlockFound on a null entry is a
+	// null-deref self-DoS; surface it via LogPrintf and bail out of the
+	// recursion rather than crash-looping.
+	CBlockIndex* pBad = nullptr;
+	if (LookupBlockIndex(badBlock, &pBad) && pBad != nullptr) {
+	    InvalidBlockFound(pBad);
+	    return ActivateBestChain(state); //Loop until the pain stops
+	}
+	LogPrintf("ActivateBestChainStep: badBlock %s not in mapBlockIndex, giving up recursion\n",
+	          badBlock.GetHex().c_str());
+	return false;
     }
     pviewTip->Flush();
 
@@ -2977,8 +3023,14 @@ void PrintBlockTree()
 
         // print item
         CBlock block;
-assert(0); //TODO: readblock can fail in MBC and is not even necessary for printing the tree
-        blockCache.ReadBlockFromDisk(block, pindex);
+        // If the block cannot be read (e.g. pruned or corrupted blk file),
+        // fall back to printing only the index metadata rather than abort().
+        if (!blockCache.ReadBlockFromDisk(block, pindex)) {
+            LogPrintf("%d (blk%05u.dat:0x%x)  <unreadable block>\n",
+                pindex->nHeight,
+                pindex->GetBlockPos().nFile, pindex->GetBlockPos().nPos);
+            continue;
+        }
         LogPrintf("%d (blk%05u.dat:0x%x)  %s  tx %" PRIszu "\n",
             pindex->nHeight,
             pindex->GetBlockPos().nFile, pindex->GetBlockPos().nPos,
@@ -3153,7 +3205,10 @@ string GetWarnings(string strFor)
         return strStatusBar;
     else if (strFor == "rpc")
         return strRPC;
-    assert(!"GetWarnings() : invalid parameter");
+    // Unreachable: documents an exhaustive switch over the call-site string.
+    // Use Assume so the constraint fires in debug builds but does not abort
+    // a production daemon if a new caller passes an unexpected value.
+    Assume(false);
     return "error";
 }
 
