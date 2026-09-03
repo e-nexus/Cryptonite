@@ -2,9 +2,9 @@ include $(top_srcdir)/src/Makefile.include
 
 AM_CPPFLAGS += -I$(top_srcdir)/src -std=c++17 -fpermissive -ffloat-store -D__STDC_LIMIT_MACROS
 
-bin_PROGRAMS = test_bitcoin
+bin_PROGRAMS = test_cryptonite
 
-TESTS = test_bitcoin
+TESTS = test_cryptonite
 
 JSON_TEST_FILES = \
   data/script_valid.json \
@@ -34,16 +34,16 @@ RAW_TEST_FILES = data/alertTests.raw
 
 BUILT_SOURCES = $(JSON_TEST_FILES:.json=.json.h) $(RAW_TEST_FILES:.raw=.raw.h)
 
-# test_bitcoin binary #
-test_bitcoin_CPPFLAGS = $(AM_CPPFLAGS) $(TESTDEFS)
-test_bitcoin_LDADD = $(LIBBITCOIN_SERVER) $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBLEVELDB) $(LIBMEMENV) \
-  $(BOOST_LIBS) $(BOOST_UNIT_TEST_FRAMEWORK_LIB) 
+# test_cryptonite binary #
+test_cryptonite_CPPFLAGS = $(AM_CPPFLAGS) $(TESTDEFS)
+test_cryptonite_LDADD = $(LIBBITCOIN_SERVER) $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBLEVELDB) $(LIBMEMENV) \
+  $(BOOST_LIBS) $(BOOST_UNIT_TEST_FRAMEWORK_LIB)
 if ENABLE_WALLET
-test_bitcoin_LDADD += $(LIBBITCOIN_WALLET)
+test_cryptonite_LDADD += $(LIBBITCOIN_WALLET)
 endif
-test_bitcoin_LDADD += $(BDB_LIBS) -lgmp
+test_cryptonite_LDADD += $(BDB_LIBS) -lgmp
 
-test_bitcoin_SOURCES = \
+test_cryptonite_SOURCES = \
   alert_tests.cpp \
   allocator_tests.cpp \
   base32_tests.cpp \
@@ -60,7 +60,7 @@ test_bitcoin_SOURCES = \
   serialize_tests.cpp \
   uint256_tests.cpp \
   util_tests.cpp \
-  test_bitcoin.cpp \
+  test_cryptonite.cpp \
   $(JSON_H) \
   $(JSON_TEST_FILES) $(RAW_TEST_FILES)
 #key_tests.cpp 
@@ -77,12 +77,12 @@ test_bitcoin_SOURCES = \
 #sighash_tests.cpp
 
 if ENABLE_WALLET
-test_bitcoin_SOURCES += \
+test_cryptonite_SOURCES += \
    rpc_wallet_tests.cpp
 endif
 #accounting_tests.cpp 
 #wallet_tests.cpp 
 
-nodist_test_bitcoin_SOURCES = $(BUILT_SOURCES)
+nodist_test_cryptonite_SOURCES = $(BUILT_SOURCES)
 
 CLEANFILES = *.gcda *.gcno $(BUILT_SOURCES)
