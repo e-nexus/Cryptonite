@@ -1,11 +1,11 @@
 *.tar.gz
 
 *.exe
-src/bitcoin
-src/bitcoind
-src/bitcoin-cli
-src/test/test_bitcoin
-src/qt/test/test_bitcoin-qt
+src/cryptonite
+src/cryptonited
+src/cryptonite-cli
+src/test/test_cryptonite
+src/qt/test/test_cryptonite-qt
 
 Makefile.in
 aclocal.m4

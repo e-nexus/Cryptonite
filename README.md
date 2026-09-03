@@ -4,7 +4,7 @@ Cryptonite Core integration/staging tree
 http://cryptonite.info
 
 Copyright (c) 2014 The Mini-blockchain Project<br />
-Copyright (c) 2009-2014 Bitcoin Core Developers
+Copyright (c) 2009-2026 Cryptonite Core Developers
 
 What is Cryptonite
 ----------------
@@ -61,7 +61,7 @@ Canonical configuration:
     ./configure --enable-wallet --with-incompatible-bdb --without-gui \
                 --without-miniupnpc --disable-hardening --enable-tests
     make
-    make check     # runs test_bitcoin (59 cases)
+    make check     # runs test_cryptonite (59 cases)
     make distcheck # builds the dist tarball end-to-end
 
 Optional flags that have been verified to work:
@@ -81,4 +81,4 @@ Notes:
   not available in Ubuntu 26.04.
 * BDB 4.8 is no longer in apt repos. Use BDB 5.3 (`libdb5.3++-dev`) and
   pass `--with-incompatible-bdb` to configure.
-* `make distcheck` is supported and produces `bitcoin-0.1.7.tar.gz`.
+* `make distcheck` is supported and produces `cryptonite-0.2.0.tar.gz`.
