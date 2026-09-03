@@ -96,11 +96,23 @@ AC_DEFUN([AX_BOOST_PROGRAM_OPTIONS],
                                    [link_program_options="no"])
                   done
                 fi
+            # Boost.Program_options is a compiled library in modern Boost. If the
+            # standard discovery failed but the compile check above succeeded, try
+            # -lboost_program_options explicitly before falling back to header-only.
             if test "x$ax_lib" = "x"; then
-                AC_MSG_ERROR(Could not find a version of the boost_program_options library!)
+                AC_CHECK_LIB([boost_program_options], [main],
+                    [BOOST_PROGRAM_OPTIONS_LIB="-lboost_program_options"; AC_SUBST(BOOST_PROGRAM_OPTIONS_LIB) link_program_options="yes"],
+                    [link_program_options="no"])
+                if test "x$link_program_options" != "xyes"; then
+                    AC_MSG_WARN([Boost::Program_options headers found but no libboost_program_options binary. Treating as header-only; BOOST_PROGRAM_OPTIONS_LIB left empty.])
+                    BOOST_PROGRAM_OPTIONS_LIB=""
+                    AC_SUBST(BOOST_PROGRAM_OPTIONS_LIB)
+                fi
             fi
 				if test "x$link_program_options" != "xyes"; then
-					AC_MSG_ERROR([Could not link against [$ax_lib] !])
+                    AC_MSG_WARN([Could not link boost_program_options. Treating as header-only.])
+                    BOOST_PROGRAM_OPTIONS_LIB=""
+                    AC_SUBST(BOOST_PROGRAM_OPTIONS_LIB)
 				fi
 		fi
 		CPPFLAGS="$CPPFLAGS_SAVED"

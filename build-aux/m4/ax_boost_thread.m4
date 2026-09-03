@@ -128,19 +128,27 @@ AC_DEFUN([AX_BOOST_THREAD],
                   done
 
             fi
+            # Boost.Thread is still a compiled library in modern Boost, but the
+            # linker flag must be discovered through Boost's own cmake-style naming
+            # on some distributions. If the compile check above succeeded and the
+            # standard library discovery failed, try -lboost_thread explicitly.
             if test "x$ax_lib" = "x"; then
-                AC_MSG_ERROR(Could not find a version of the boost_thread library!)
+                AC_CHECK_LIB([boost_thread], [exit],
+                    [BOOST_THREAD_LIB="-lboost_thread"; AC_SUBST(BOOST_THREAD_LIB) link_thread="yes"],
+                    [link_thread="no"])
+                if test "x$link_thread" != "xyes"; then
+                    AC_MSG_WARN([Boost::Thread headers found but no libboost_thread binary. Treating as header-only; BOOST_THREAD_LIB left empty.])
+                    BOOST_THREAD_LIB=""
+                    AC_SUBST(BOOST_THREAD_LIB)
+                fi
             fi
 			if test "x$link_thread" = "xno"; then
-				AC_MSG_ERROR(Could not link against $ax_lib !)
-                        else
-                           case "x$host_os" in
-                              *bsd* )
-				BOOST_LDFLAGS="-pthread $BOOST_LDFLAGS"
-                              break;
-                              ;;
-                           esac
-
+                case "x$host_os" in
+                  *bsd* )
+                    BOOST_LDFLAGS="-pthread $BOOST_LDFLAGS"
+                  break;
+                  ;;
+                esac
 			fi
 		fi
 

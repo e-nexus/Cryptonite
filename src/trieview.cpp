@@ -5,7 +5,9 @@
 #include "main.h"
 #include "txdb.h"
 #include "init.h"
-#include "wallet.h"	
+#ifdef ENABLE_WALLET
+#include "wallet.h"
+#endif	
 
 extern map<uint256, CBlockIndex*> mapBlockIndex;
 
@@ -502,13 +504,17 @@ bool TrieView::ComplexBalances(int nMineConf, int nTheirsConf, vector<uint160> h
 		    CTransaction tx = *it3;
 		    for(vector<CTxOut>::iterator it4=tx.vout.begin(); it4!=tx.vout.end(); it4++){
 			CTxOut txout = *it4;
+#ifdef ENABLE_WALLET
 			if(txout.pubKey == *it && (i<(nMineConf-1) || !pwalletMain->IsFromMe(tx))){
+#else
+			if(txout.pubKey == *it){
+#endif
 			    deps+=txout.nValue;
 			    if(block.nHeight > age)
 				age = block.nHeight;
 			}
 		    }
-		}
+		    		}
 	    }
 
 	    //Include any withdrawals in mempool
@@ -530,19 +536,27 @@ bool TrieView::ComplexBalances(int nMineConf, int nTheirsConf, vector<uint160> h
 		for(vector<CTxOut>::iterator it3=tx.vout.begin(); it3!=tx.vout.end(); it3++){
 		    CTxOut txout=*it3;
 		    if(txout.pubKey == *it){
+#ifdef ENABLE_WALLET
 			if((pwalletMain->IsFromMe(tx) && nMineConf==0) || nTheirsConf==0)
+#else
+			if(nTheirsConf==0)
+#endif
 			    balance+=txout.nValue;
 		    }
 		}
 		if(tx.fSetLimit){
-		   //TODO: there are cases where we can use an enlarged limit
-		   //like if a queued update is old enough in chain it should switch
-		   bool fTrusted = (pwalletMain->IsFromMe(tx) && nMineConf==0) || nTheirsConf==0; 
-		   bool fSmaller = tx.nLimitValue < limit;
-		   if(fTrusted || !fSmaller){
-			futurelimit = tx.nLimitValue;
-		   }
-		}
+			   //TODO: there are cases where we can use an enlarged limit
+			   //like if a queued update is old enough in chain it should switch
+		#ifdef ENABLE_WALLET
+			   bool fTrusted = (pwalletMain->IsFromMe(tx) && nMineConf==0) || nTheirsConf==0;
+		#else
+			   bool fTrusted = (false) || nTheirsConf==0;
+		#endif
+			   bool fSmaller = tx.nLimitValue < limit;
+			   if(fTrusted || !fSmaller){
+				futurelimit = tx.nLimitValue;
+			   }
+			}
 	    }
 
 	    if(deps + withdrawals > balance)

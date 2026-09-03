@@ -51,3 +51,34 @@ and unit and sanity tests are automatically run.
 
 Large changes should have a test plan, and should be tested by somebody other
 than the developer who wrote the code.
+
+Building on Linux (Ubuntu 26.04+)
+---------------------------------
+
+Canonical configuration:
+
+    ./autogen.sh
+    ./configure --enable-wallet --with-incompatible-bdb --without-gui \
+                --without-miniupnpc --disable-hardening --enable-tests
+    make
+    make check     # runs test_bitcoin (59 cases)
+    make distcheck # builds the dist tarball end-to-end
+
+Optional flags that have been verified to work:
+
+    --disable-wallet       # builds without the wallet library
+    --with-miniupnpc       # enables UPnP port mapping (libminiupnpc-dev)
+    --enable-hardening     # adds PIE, Full RELRO, -D_FORTIFY_SOURCE=2, stack protector
+
+Cryptonite's COIN constant is 10^10 (10-digit "ep" precision). Sub-cent
+amounts such as 0.0000001 XCN are valid; the canonical config builds and
+the daemon prints these at full precision.
+
+Notes:
+
+* The Qt GUI is not currently supported. `src/qt/` is excluded from the
+  build and from `make distcheck` because it targets Qt4 APIs that are
+  not available in Ubuntu 26.04.
+* BDB 4.8 is no longer in apt repos. Use BDB 5.3 (`libdb5.3++-dev`) and
+  pass `--with-incompatible-bdb` to configure.
+* `make distcheck` is supported and produces `bitcoin-0.1.7.tar.gz`.

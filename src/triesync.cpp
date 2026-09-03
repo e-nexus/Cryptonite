@@ -5,7 +5,9 @@
 #include "main.h"
 #include "txdb.h"
 #include "init.h"
-#include "wallet.h"	
+#ifdef ENABLE_WALLET
+#include "wallet.h"
+#endif	
 
 TrieSync::TrieSync(){
     log2size=0;

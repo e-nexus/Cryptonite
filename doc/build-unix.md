@@ -1,41 +1,39 @@
 UNIX BUILD NOTES
-====================
-Some notes on how to build Bitcoin in Unix. 
+================
+Some notes on how to build Cryptonite in Unix. The Qt GUI is not
+currently supported in this fork; only the headless daemon
+(cryptonited) and the RPC client (cryptonite-cli) are produced.
 
 To Build
----------------------
+--------
 
-	./autogen.sh
-	./configure
-	make
+    ./autogen.sh
+    ./configure --enable-wallet --with-incompatible-bdb --without-gui \
+                --without-miniupnpc --disable-hardening --enable-tests
+    make
 
-This will build bitcoin-qt as well if the dependencies are met.
+Use `make check` afterwards to run the test suite.
 
 Dependencies
----------------------
+------------
 
  Library     | Purpose          | Description
  ------------|------------------|----------------------
  libssl      | SSL Support      | Secure communications
- libdb4.8    | Berkeley DB      | Wallet storage
+ libdb5.3    | Berkeley DB      | Wallet storage (with --with-incompatible-bdb)
  libboost    | Boost            | C++ Library
  libgmp      | Large numbers    | GNU Multiprecision
- miniupnpc   | UPnP Support     | Optional firewall-jumping support
- qt          | GUI              | GUI toolkit
- protobuf    | Payments in GUI  | Data interchange format used for payment protocol
- libqrencode | QR codes in GUI  | Optional for generating QR codes
+ miniupnpc   | UPnP Support     | Optional firewall-jumping support (--with-miniupnpc)
 
-[miniupnpc](http://miniupnp.free.fr/) may be used for UPnP port mapping.  It can be downloaded from [here](
-http://miniupnp.tuxfamily.org/files/).  UPnP support is compiled in and
-turned off by default.  See the configure options for upnp behavior desired:
+Qt, protobuf and libqrencode are NOT used in this build because the Qt
+GUI is disabled.
 
-	--without-miniupnpc      No UPnP support miniupnp not required
-	--disable-upnp-default   (the default) UPnP support turned off by default at runtime
-	--enable-upnp-default    UPnP support turned on by default at runtime
+[miniupnpc](http://miniupnp.free.fr/) may be used for UPnP port mapping.
+On Debian / Ubuntu it ships as `libminiupnpc-dev`. UPnP support is
+compiled in and turned off by default. Configure flags:
 
-IPv6 support may be disabled by setting:
-
-	--disable-ipv6           Disable IPv6 support
+    --without-miniupnpc      No UPnP support
+    --with-miniupnpc         Build with UPnP support (default: off)
 
 Licenses of statically linked libraries:
  Berkeley DB   New BSD license with additional requirement that linked
@@ -43,175 +41,76 @@ Licenses of statically linked libraries:
  Boost         MIT-like license
  miniupnpc     New (3-clause) BSD license
 
-- For the versions used in this release, see doc/release-process.md under *Fetch and build inputs*.
 
 System requirements
---------------------
+-------------------
 
-C++ compilers are memory-hungry. It is recommended to have at least 1 GB of
-memory available when compiling Bitcoin Core. With 512MB of memory or less
-compilation will take much longer due to swap thrashing.
+C++ compilers are memory-hungry. It is recommended to have at least 1 GB
+of memory available when compiling Cryptonite. With 512MB of memory or
+less compilation will take much longer due to swap thrashing.
 
 Dependency Build Instructions: Ubuntu & Debian
 ----------------------------------------------
-Build requirements:
 
-	sudo apt-get install build-essential
-	sudo apt-get install libtool autotools-dev autoconf
-	sudo apt-get install libssl-dev libgmp-dev
+Build requirements (Ubuntu 26.04 / Debian 12 or newer):
 
-for Ubuntu 12.04 and later:
+    sudo apt-get install build-essential
+    sudo apt-get install libtool autotools-dev autoconf
+    sudo apt-get install libssl-dev libgmp-dev
+    sudo apt-get install libboost-all-dev
+    sudo apt-get install libdb5.3++-dev
 
-	sudo apt-get install libboost-all-dev
-
- db4.8 packages are available [here](https://launchpad.net/~bitcoin/+archive/bitcoin).
- You can add the repository using the following command:
-
-        sudo add-apt-repository ppa:bitcoin/bitcoin
-        sudo apt-get update
-
- Ubuntu 12.04 and later have packages for libdb5.1-dev and libdb5.1++-dev,
- but using these will break binary wallet compatibility, and is not recommended.
-
-for Ubuntu 13.10:
-	libboost1.54 will not work,
-	remove libboost1.54-all-dev and install libboost1.53-all-dev instead.
-
-for Debian 7 (Wheezy) and later:
- The oldstable repository contains db4.8 packages.
- Add the following line to /etc/apt/sources.list,
- replacing [mirror] with any official debian mirror.
-
-	deb http://[mirror]/debian/ oldstable main
-
-To enable the change run
-
-	sudo apt-get update
-
-for other Ubuntu & Debian:
-
-	sudo apt-get install libdb4.8-dev
-	sudo apt-get install libdb4.8++-dev
-	sudo apt-get install libboost1.55-all-dev
+For Berkeley DB: BDB 4.8 is no longer in apt repos. Use the system BDB
+5.3 (libdb5.3++-dev) and pass `--with-incompatible-bdb` to configure.
+This is the default in the canonical invocation shown above.
 
 Optional:
 
-	sudo apt-get install libminiupnpc-dev (see --with-miniupnpc and --enable-upnp-default)
+    sudo apt-get install libminiupnpc-dev   # for --with-miniupnpc
 
-Dependencies for the GUI: Ubuntu & Debian
------------------------------------------
+GUI
+---
 
-If you want to build Bitcoin-Qt, make sure that the required packages for Qt development
-are installed. Either Qt 4 or Qt 5 are necessary to build the GUI.
-If both Qt 4 and Qt 5 are installed, Qt 4 will be used. Pass `--with-gui=qt5` to configure to choose Qt5.
-To build without GUI pass `--without-gui`.
+The Qt GUI is not supported in this fork. src/qt/ targets Qt4 APIs that
+are not available in Ubuntu 26.04 and is excluded from the build and
+from `make distcheck`.
 
-To build with Qt 4 you need the following:
-
-    sudo apt-get install libqt4-dev libprotobuf-dev protobuf-compiler
-
-For Qt 5 you need the following:
-
-    sudo apt-get install libqt5gui5 libqt5core5 libqt5dbus5 qttools5-dev qttools5-dev-tools libprotobuf-dev
-
-libqrencode (optional) can be installed with:
-
-    sudo apt-get install libqrencode-dev
-
-Once these are installed, they will be found by configure and a bitcoin-qt executable will be
-built by default.
 
 Notes
 -----
-The release is built with GCC and then "strip bitcoind" to strip the debug
-symbols, which reduces the executable size by about 90%.
-
-
-miniupnpc
----------
-	tar -xzvf miniupnpc-1.6.tar.gz
-	cd miniupnpc-1.6
-	make
-	sudo su
-	make install
-
-
-Berkeley DB
------------
-You need Berkeley DB 4.8.  If you have to build Berkeley DB yourself:
-
-	cd build_unix/
-	../dist/configure --enable-cxx
-	make
-	sudo make install
-
-
-Boost
------
-If you need to build Boost yourself:
-
-	sudo su
-	./bootstrap.sh
-	./bjam install
+The release is built with GCC and then "strip cryptonited" to strip the
+debug symbols, which reduces the executable size by about 90%.
 
 
 Security
 --------
-To help make your bitcoin installation more secure by making certain attacks impossible to
-exploit even if a vulnerability is found, binaries are hardened by default.
-This can be disabled with:
+To help make your Cryptonite installation more secure by making
+certain attacks impossible to exploit even if a vulnerability is found,
+binaries can be hardened via:
 
-Hardening Flags:
+    ./configure --enable-hardening
 
-	./configure --enable-hardening
-	./configure --disable-hardening
+This adds Position Independent Executable (PIE), Full RELRO
+(-Wl,-z,relro -Wl,-z,now), -D_FORTIFY_SOURCE=2 and stack-protector
+flags. Disable with:
 
+    ./configure --disable-hardening
 
-Hardening enables the following features:
+The canonical config in this repository uses --disable-hardening so
+the binaries can be debugged with line-level symbols; --enable-hardening
+is fully supported and produces a verified PIE + Full RELRO binary.
 
-* Position Independent Executable
-    Build position independent code to take advantage of Address Space Layout Randomization
-    offered by some kernels. An attacker who is able to cause execution of code at an arbitrary
-    memory location is thwarted if he doesn't know where anything useful is located.
-    The stack and heap are randomly located by default but this allows the code section to be
-    randomly located as well.
-
-    On an Amd64 processor where a library was not compiled with -fPIC, this will cause an error
-    such as: "relocation R_X86_64_32 against `......' can not be used when making a shared object;"
-
-    To test that you have built PIE executable, install scanelf, part of paxutils, and use:
-
-    	scanelf -e ./bitcoin
-
-    The output should contain:
-     TYPE
-    ET_DYN
-
-* Non-executable Stack
-    If the stack is executable then trivial stack based buffer overflow exploits are possible if
-    vulnerable buffers are found. By default, bitcoin should be built with a non-executable stack
-    but if one of the libraries it uses asks for an executable stack or someone makes a mistake
-    and uses a compiler extension which requires an executable stack, it will silently build an
-    executable without the non-executable stack protection.
-
-    To verify that the stack is non-executable after compiling use:
-    `scanelf -e ./bitcoin`
-
-    the output should contain:
-	STK/REL/PTL
-	RW- R-- RW-
-
-    The STK RW- means that the stack is readable and writeable but not executable.
 
 Disable-wallet mode
---------------------
-When the intention is to run only a P2P node without a wallet, bitcoin may be compiled in
-disable-wallet mode with:
+-------------------
+When the intention is to run only a P2P node without a wallet,
+Cryptonite may be compiled in disable-wallet mode with:
 
     ./configure --disable-wallet
 
-In this case there is no dependency on Berkeley DB 4.8.
+In this case there is no dependency on Berkeley DB and the binary is
+substantially smaller (cryptonited drops from ~100 MB to ~79 MB
+because libcryptonite_wallet.a is not linked).
 
-Mining is also possible in disable-wallet mode, but only using the `getblocktemplate` RPC
-call not `getwork`.
-
+Mining is also possible in disable-wallet mode, but only using the
+`getblocktemplate` RPC call (not `getwork`).

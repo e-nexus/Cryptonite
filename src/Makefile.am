@@ -1,6 +1,6 @@
 include Makefile.include
 
-AM_CPPFLAGS += -I$(builddir) -fpermissive -ffloat-store -std=c++17 -D__STDC_LIMIT_MACROS -D__USE_MINGW_ANSI_STDIO
+AM_CPPFLAGS += -I$(builddir) -fpermissive -ffloat-store -std=c++17 -Wno-deprecated-declarations -D__STDC_LIMIT_MACROS -D__USE_MINGW_ANSI_STDIO
 
 noinst_LIBRARIES = \
   libcryptonite_server.a \
@@ -21,7 +21,7 @@ if BUILD_BITCOIN_CLI
 endif
 
 SUBDIRS = . $(BUILD_QT) $(BUILD_TEST)
-DIST_SUBDIRS = . qt test
+DIST_SUBDIRS = . test
 .PHONY: FORCE
 # bitcoin core #
 BITCOIN_CORE_H = \
@@ -31,18 +31,19 @@ BITCOIN_CORE_H = \
   allocators.h \
   base58.h \
   base58.cpp \
+  bignum.h \
   bloom.h \
+  blockcache.h \
   chainparams.h \
   checkpoints.h \
   checkqueue.h \
   clientversion.h \
-  coincontrol.h \
-  coins.h \
   compat.h \
   core.h \
   crypter.h \
   db.h \
   hash.h \
+  hashblock.h \
   init.h \
   key.h \
   keystore.h \
@@ -67,6 +68,7 @@ BITCOIN_CORE_H = \
   tinyformat.h \
   trie.h \
   trieview.h \
+  triesync.h \
   txdb.h \
   txmempool.h \
   ui_interface.h \
@@ -211,12 +213,23 @@ qt/cryptonitestrings.cpp: $(libcryptonite_server_a_SOURCES) $(libcryptonite_comm
 	@test -n $(XGETTEXT) || echo "xgettext is required for updating translations"
 	@cd $(top_srcdir); XGETTEXT=$(XGETTEXT) share/qt/extract_strings_qt.py
 
-CLEANFILES = leveldb/libleveldb.a leveldb/libmemenv.a *.gcda *.gcno liblmdb/liblmdb.a liblmdb/libldb.so liblmdb/*.o
+CLEANFILES = leveldb/libleveldb.a leveldb/libmemenv.a *.gcda *.gcno
 
 DISTCLEANFILES = obj/build.h
 
-EXTRA_DIST = leveldb Makefile.include
+EXTRA_DIST = \
+  leveldb \
+  Makefile.include \
+  hash/sph_haval.h \
+  hash/sph_keccak.h \
+  hash/sph_ripemd.h \
+  hash/sph_sha2.h \
+  hash/sph_tiger.h \
+  hash/sph_whirlpool.h \
+  hash/sph_types.h \
+  hash/haval_helper.c \
+  hash/md_helper.c
 
 clean-local:
 	-$(MAKE) -C leveldb clean
-	rm -f leveldb/*/*.gcno leveldb/helpers/memenv/*.gcno liblmdb/*/*.gcno
+	rm -f leveldb/*/*.gcno leveldb/helpers/memenv/*.gcno

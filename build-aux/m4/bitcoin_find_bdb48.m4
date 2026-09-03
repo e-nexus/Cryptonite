@@ -5,7 +5,7 @@ AC_DEFUN([BITCOIN_FIND_BDB48],[
   bdbpath=X
   bdb48path=X
   bdbdirlist="."
-  for _vn in 4.8 48 4 5 ''; do
+  for _vn in 4.8 48 4 5 5.3 53 6 ''; do
     for _pfx in b lib ''; do
       bdbdirlist="$bdbdirlist ${_pfx}db${_vn}"
     done
@@ -15,7 +15,7 @@ AC_DEFUN([BITCOIN_FIND_BDB48],[
     AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
       #include <${searchpath}db_cxx.h>
     ]],[[
-      #if !((DB_VERSION_MAJOR == 4 && DB_VERSION_MINOR >= 8) || DB_VERSION_MAJOR > 4)
+      #if !((DB_VERSION_MAJOR == 4 && DB_VERSION_MINOR >= 8) || DB_VERSION_MAJOR >= 5)
         //#error "failed to find bdb 4.8+"
       #endif
     ]])],[
@@ -51,9 +51,11 @@ AC_DEFUN([BITCOIN_FIND_BDB48],[
     bdbpath="${bdb48path}"
   fi
   AC_SUBST(BDB_CPPFLAGS)
-  
-  # TODO: Ideally this could find the library version and make sure it matches the headers being used
-  for searchlib in db_cxx-4.8 db_cxx; do
+
+  # Library matching. Search order: newest versioned libdb_cxx first, then
+  # unversioned. BDB 5.x and 6.x have a stable ABI; linking against an
+  # unversioned libdb_cxx will pull in whatever installed version is present.
+  for searchlib in db_cxx-6 db_cxx-6.2 db_cxx-5.3 db_cxx-5 db_cxx-4.8 db_cxx; do
     AC_CHECK_LIB([$searchlib],[main],[
       BDB_LIBS="-l${searchlib}"
       break

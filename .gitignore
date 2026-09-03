@@ -68,6 +68,27 @@ qrc_*.cpp
 .DS_Store
 build
 
+# Autotools-generated artifacts (created by ./autogen.sh + autoreconf)
+build-aux/compile
+build-aux/config.guess
+build-aux/config.sub
+build-aux/depcomp
+build-aux/install-sh
+build-aux/ltmain.sh
+build-aux/missing
+build-aux/test-driver
+build-aux/m4/libtool.m4
+build-aux/m4/ltoptions.m4
+build-aux/m4/ltsugar.m4
+build-aux/m4/ltversion.m4
+build-aux/m4/lt~obsolete.m4
+configure~
+libtool
+
+# Built binaries
+src/cryptonited
+src/cryptonite-cli
+
 #lcov
 *.gcno
 /*.info

@@ -1,44 +1,56 @@
-Cryptonite 0.1.0 BETA
-=====================
+Cryptonite Core 0.1.7
+======================
 
 Copyright (c) 2009-2014 Bitcoin Developers
 Copyright (c) 2014 The Mini-Blockchain Project
 
 Setup
 ---------------------
-[Bitcoin Core](http://bitcoin.org/en/download) is the original Bitcoin client and it builds the backbone of the network. However, it downloads and stores the entire history of Bitcoin transactions (which is currently several GBs); depending on the speed of your computer and network connection, the synchronization process can take anywhere from a few hours to a day or more. Thankfully you only have to do this once. If you would like the process to go faster you can [download the blockchain directly](bootstrap.md).
+[Bitcoin Core](http://bitcoin.org/en/download) is the original Bitcoin
+client and it builds the backbone of the network. However, it downloads
+and stores the entire history of Bitcoin transactions (which is
+currently several GBs); depending on the speed of your computer and
+network connection, the synchronization process can take anywhere from
+a few hours to a day or more. Cryptonite is a fork of Bitcoin Core that
+ships with its own chainstate and consensus rules; you only need to do
+the initial sync once. To speed up the process you can
+[bootstrap the chainstate](bootstrap.md).
 
 Running
 ---------------------
-The following are some helpful notes on how to run Bitcoin on your native platform. 
+The following are some helpful notes on how to run Cryptonite on your
+native platform.
+
+Note: the Qt GUI is not currently supported in this fork. Cryptonite
+ships only the headless daemon (`cryptonited`) and the RPC client
+(`cryptonite-cli`).
 
 ### Unix
 
-You need the Qt4 run-time libraries to run Bitcoin-Qt. On Debian or Ubuntu:
-
-	sudo apt-get install libqtgui4
-
 Unpack the files into a directory and run:
 
-- bin/32/bitcoin-qt (GUI, 32-bit) or bin/32/bitcoind (headless, 32-bit)
-- bin/64/bitcoin-qt (GUI, 64-bit) or bin/64/bitcoind (headless, 64-bit)
+- bin/64/cryptonited   (headless daemon, 64-bit)
+- bin/64/cryptonite-cli (RPC client, 64-bit)
 
-
+You will need a working Berkeley DB 5.3 (libdb5.3++-dev) and Boost
+1.70 or newer to build from source; see [build-unix.md](build-unix.md).
 
 ### Windows
 
-Unpack the files into a directory, and then run bitcoin-qt.exe.
+The Windows build is not currently exercised; see [build-msw.md](build-msw.md)
+for the build procedure. Cryptonite produces `cryptonited.exe` and
+`cryptonite-cli.exe`.
 
 ### OSX
 
-Drag Bitcoin-Qt to your applications folder, and then run Bitcoin-Qt.
+The macOS build is not currently exercised; see [build-osx.md](build-osx.md).
+Cryptonite produces `./cryptonited` and `./cryptonite-cli` from the
+src/ directory after `./configure && make`.
 
 ### Need Help?
 
-* See the documentation at the [Bitcoin Wiki](https://en.bitcoin.it/wiki/Main_Page)
-for help and more information.
-* Ask for help on [#bitcoin](http://webchat.freenode.net?channels=bitcoin) on Freenode. If you don't have an IRC client use [webchat here](http://webchat.freenode.net?channels=bitcoin).
-* Ask for help on the [BitcoinTalk](https://bitcointalk.org/) forums, in the [Technical Support board](https://bitcointalk.org/index.php?board=4.0).
+* See [build-unix.md](build-unix.md) for build prerequisites and flags.
+* Project home page: http://cryptonite.info
 
 Building
 ---------------------

@@ -103,15 +103,18 @@ public:
     }
     bool connect(const std::string& server, const std::string& port)
     {
-        boost::asio::ip::tcp::resolver resolver(stream.get_executor());
-        boost::asio::ip::tcp::resolver::query query(server.c_str(), port.c_str());
-        boost::asio::ip::tcp::resolver::iterator endpoint_iterator = resolver.resolve(query);
-        boost::asio::ip::tcp::resolver::iterator end;
+        // Boost 1.69+ removed tcp::resolver::query and tcp::resolver::iterator;
+        // the modern API uses results_type and the (host, service) constructor
+        // of the resolver itself.
+        using resolver_t = boost::asio::ip::basic_resolver<typename Protocol::socket::endpoint_type::protocol_type>;
+        resolver_t resolver(stream.get_executor());
+        typename resolver_t::results_type endpoints = resolver.resolve(server, port);
         boost::system::error_code error = boost::asio::error::host_not_found;
-        while (error && endpoint_iterator != end)
+        for (const auto& endpoint : endpoints)
         {
             stream.lowest_layer().close();
-            stream.lowest_layer().connect(*endpoint_iterator++, error);
+            stream.lowest_layer().connect(endpoint, error);
+            if (!error) break;
         }
         if (error)
             return false;

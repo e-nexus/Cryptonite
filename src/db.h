@@ -16,7 +16,6 @@
 
 #include <boost/filesystem/path.hpp>
 #include <db_cxx.h>
-#include "mdb.hpp"
 
 class CAddrMan;
 struct CBlockLocator;

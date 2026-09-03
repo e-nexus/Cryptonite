@@ -91,6 +91,7 @@ public:
 /** A CWallet is an extension of a keystore, which also maintains a set of transactions and balances,
  * and provides the ability to create new transactions.
  */
+#ifdef ENABLE_WALLET
 class CWallet : public CCryptoKeyStore, public CWalletInterface
 {
 private:
@@ -743,5 +744,7 @@ public:
 private:
     std::vector<char> _ssExtra;
 };
+
+#endif // ENABLE_WALLET
 
 #endif

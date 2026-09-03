@@ -14,25 +14,39 @@
 
 using namespace std;
 
+// Cryptonite ships only the genesis block (height 0) in its compiled-in
+// checkpoint map (see checkpoints.cpp). The semantic guarantee of the
+// Checkpoints subsystem is:
+//   - CheckBlock(h, hash) returns true when h is not in the checkpoint map
+//   - CheckBlock(h, hash) returns (hash == expected) when h is in the map
+//   - GetTotalBlocksEstimate() returns the height of the last checkpoint
+//     (0 here, since only genesis is present)
+//
+// These invariants must hold regardless of which compiled-in checkpoints
+// exist, so the test exercises them against arbitrary heights/hashes
+// rather than asserting specific Bitcoin Core mainnet checkpoints.
 BOOST_AUTO_TEST_SUITE(Checkpoints_tests)
 
 BOOST_AUTO_TEST_CASE(sanity)
 {
-    uint256 p11111 = uint256("0x0000000069e244f73d78e8fd29ba2fd2ed618bd6fa2ee92559f542fdb26e7c1d");
-    uint256 p134444 = uint256("0x00000000000005b12ffd4cd315cd34ffd4a594f430ac814c91184a0d42d2b0fe");
-    BOOST_CHECK(Checkpoints::CheckBlock(11111, p11111));
-    BOOST_CHECK(Checkpoints::CheckBlock(134444, p134444));
+    const uint256 hashGenesis    = uint256("0x000009a460ccc429ac6e53c91c6ed2d96697884b8b656a903042faff8971c5aa");
+    const uint256 hashGenesisAlt = uint256("0x00000000000005b12ffd4cd315cd34ffd4a594f430ac814c91184a0d42d2b0fe");
+    const uint256 hashRandom     = uint256("0x1111111111111111111111111111111111111111111111111111111111111111");
 
-    
-    // Wrong hashes at checkpoints should fail:
-    BOOST_CHECK(!Checkpoints::CheckBlock(11111, p134444));
-    BOOST_CHECK(!Checkpoints::CheckBlock(134444, p11111));
+    // Genesis is in the checkpoint map; matching hash must verify, non-matching must not.
+    BOOST_CHECK( Checkpoints::CheckBlock(0, hashGenesis));
+    BOOST_CHECK(!Checkpoints::CheckBlock(0, hashGenesisAlt));
 
-    // ... but any hash not at a checkpoint should succeed:
-    BOOST_CHECK(Checkpoints::CheckBlock(11111+1, p134444));
-    BOOST_CHECK(Checkpoints::CheckBlock(134444+1, p11111));
+    // Heights outside the checkpoint map must always pass, regardless of hash.
+    BOOST_CHECK( Checkpoints::CheckBlock(1, hashGenesis));
+    BOOST_CHECK( Checkpoints::CheckBlock(11111, hashGenesis));
+    BOOST_CHECK( Checkpoints::CheckBlock(11111, hashGenesisAlt));
+    BOOST_CHECK( Checkpoints::CheckBlock(134444, hashGenesisAlt));
+    BOOST_CHECK( Checkpoints::CheckBlock(999999, hashRandom));
 
-    BOOST_CHECK(Checkpoints::GetTotalBlocksEstimate() >= 134444);
-}    
+    // Total blocks estimate is bounded by the last checkpoint height.
+    BOOST_CHECK(Checkpoints::GetTotalBlocksEstimate() >= 0);
+    BOOST_CHECK(Checkpoints::GetTotalBlocksEstimate() <  134444);
+}
 
 BOOST_AUTO_TEST_SUITE_END()

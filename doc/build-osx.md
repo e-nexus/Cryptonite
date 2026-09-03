@@ -1,6 +1,6 @@
 Mac OS X Build Instructions and Notes
 ====================================
-This guide will show you how to build bitcoind(headless client) for OSX.
+This guide will show you how to build cryptonited (headless client) for OSX.
 
 Notes
 -----
@@ -48,18 +48,18 @@ Installing the dependencies using MacPorts is very straightforward.
 
     sudo port install boost db48@+no_java openssl miniupnpc autoconf pkgconfig automake
 
-Optional: install Qt4
+Optional: install Qt (currently disabled in this fork)
 
-    sudo port install qt4-mac qrencode protobuf-cpp
+    # Qt4 is not currently supported in this fork qrencode protobuf-cpp
 
-### Building `bitcoind`
+### Building `cryptonited`
 
 1. Clone the github tree to get the source code and go into the directory.
 
         git clone git@github.com:bitcoin/bitcoin.git bitcoin
         cd bitcoin
 
-2.  Build bitcoind (and Bitcoin-Qt, if configured):
+2.  Build cryptonited:
 
         ./autogen.sh
         ./configure
@@ -74,7 +74,7 @@ Instructions: Homebrew
 
 #### Install dependencies using Homebrew
 
-        brew install autoconf automake berkeley-db4 boost miniupnpc openssl pkg-config protobuf qt
+        brew install autoconf automake berkeley-db boost miniupnpc openssl pkg-config protobuf qt
 
 Note: After you have installed the dependencies, you should check that the Homebrew installed version of OpenSSL is the one available for compilation. You can check this by typing
 
@@ -90,14 +90,14 @@ Rerunning "openssl version" should now return the correct version. If it
 doesn't, make sure `/usr/local/bin` comes before `/usr/bin` in your
 PATH. 
 
-### Building `bitcoind`
+### Building `cryptonited`
 
 1. Clone the github tree to get the source code and go into the directory.
 
         git clone https://github.com/bitcoin/bitcoin.git
         cd bitcoin
 
-2.  Build bitcoind:
+2.  Build cryptonited:
 
         ./autogen.sh
         ./configure
@@ -109,11 +109,11 @@ PATH.
 
 Creating a release build
 ------------------------
-You can ignore this section if you are building `bitcoind` for your own use.
+You can ignore this section if you are building `cryptonited` for your own use.
 
-bitcoind/bitcoin-cli binaries are not included in the Bitcoin-Qt.app bundle.
+cryptonited/cryptonite-cli binaries are not included in the the Qt GUI (not supported in this fork).app bundle.
 
-If you are building `bitcoind` or `Bitcoin-Qt` for others, your build machine should be set up
+If you are building `cryptonited` for others, your build machine should be set up
 as follows for maximum compatibility:
 
 All dependencies should be compiled with these flags:
@@ -134,16 +134,16 @@ As of December 2012, the `boost` port does not obey `macosx_deployment_target`.
 Download `http://gavinandresen-bitcoin.s3.amazonaws.com/boost_macports_fix.zip`
 for a fix.
 
-Once dependencies are compiled, see release-process.md for how the Bitcoin-Qt.app
+Once dependencies are compiled, see release-process.md for how the the Qt GUI (not supported in this fork).app
 bundle is packaged and signed to create the .dmg disk image that is distributed.
 
 Running
 -------
 
-It's now available at `./bitcoind`, provided that you are still in the `src`
+It's now available at `./cryptonited`, provided that you are still in the `src`
 directory. We have to first create the RPC configuration file, though.
 
-Run `./bitcoind` to get the filename where it should be put, or just try these
+Run `./cryptonited` to get the filename where it should be put, or just try these
 commands:
 
     echo -e "rpcuser=bitcoinrpc\nrpcpassword=$(xxd -l 16 -p /dev/urandom)" > "/Users/${USER}/Library/Application Support/Bitcoin/bitcoin.conf"
@@ -157,6 +157,6 @@ you can monitor its process by looking at the debug.log file, like this:
 
 Other commands:
 
-    ./bitcoind -daemon # to start the bitcoin daemon.
-    ./bitcoin-cli --help  # for a list of command-line options.
-    ./bitcoin-cli help    # When the daemon is running, to get a list of RPC commands
+    ./cryptonited -daemon # to start the bitcoin daemon.
+    ./cryptonite-cli --help  # for a list of command-line options.
+    ./cryptonite-cli help    # When the daemon is running, to get a list of RPC commands

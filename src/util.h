@@ -38,6 +38,11 @@ class uint256;
 static const uint64_t COIN = 10000000000;
 static const uint64_t CENT = 100000000;
 static const uint64_t COINS = UINT64_MAX/COIN;
+// Number of decimal digits needed to print every base unit of COIN without
+// truncation. Must equal the digit count of COIN. FormatMoney asserts this at
+// startup so any change to COIN forces a matching update here.
+static const int COIN_FRACT_DIGITS = 10;
+static_assert(COIN_FRACT_DIGITS == 10, "COIN_FRACT_DIGITS must equal the digit count of COIN (currently 10 for COIN=10^10)");
 
 extern std::string strCommandLine;
 

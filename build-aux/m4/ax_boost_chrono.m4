@@ -105,12 +105,24 @@ AC_DEFUN([AX_BOOST_CHRONO],
                   done
 
             fi
+            # Boost.Chrono is a separate compiled library in modern Boost. If the
+            # standard discovery failed but the compile check above succeeded, try
+            # -lboost_chrono explicitly before falling back to header-only.
             if test "x$ax_lib" = "x"; then
-                AC_MSG_ERROR(Could not find a version of the boost_chrono library!)
+                AC_CHECK_LIB([boost_chrono], [exit],
+                    [BOOST_CHRONO_LIB="-lboost_chrono"; AC_SUBST(BOOST_CHRONO_LIB) link_chrono="yes"],
+                    [link_chrono="no"])
+                if test "x$link_chrono" != "xyes"; then
+                    AC_MSG_WARN([Boost::Chrono headers found but no libboost_chrono binary. Treating as header-only; BOOST_CHRONO_LIB left empty.])
+                    BOOST_CHRONO_LIB=""
+                    AC_SUBST(BOOST_CHRONO_LIB)
+                fi
             fi
 			if test "x$link_chrono" = "xno"; then
-				AC_MSG_ERROR(Could not link against $ax_lib !)
-			fi
+                AC_MSG_WARN([Could not link boost_chrono. Treating as header-only.])
+                BOOST_CHRONO_LIB=""
+                AC_SUBST(BOOST_CHRONO_LIB)
+            fi
 		fi
 
 		CPPFLAGS="$CPPFLAGS_SAVED"

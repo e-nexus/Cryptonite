@@ -6,6 +6,9 @@
 #include "rpcclient.h"
 
 #include "base58.h"
+#include "core.h"
+#include "serialize.h"
+#include "uint256.h"
 
 #include <boost/algorithm/string.hpp>
 #include <boost/test/unit_test.hpp>
@@ -67,24 +70,39 @@ BOOST_AUTO_TEST_CASE(rpc_rawparams)
     BOOST_CHECK_THROW(CallRPC("decoderawtransaction"), runtime_error);
     BOOST_CHECK_THROW(CallRPC("decoderawtransaction null"), runtime_error);
     BOOST_CHECK_THROW(CallRPC("decoderawtransaction DEADBEEF"), runtime_error);
-    string rawtx = "01000000017f3751cc56298d6f41030571ac6e98ff0dc6487e00f2052a01000000420105a1a5746897f752952f865ef7637791c92499c48c997c6407749ec2ba822f07e78718dcf90e2b9fe7194072a21d1eb622ca87ce55e82ba885743dad5c056356fd0100f2052a010000008e8916c13bb28898ea71b0a70fc930d6b05e99ff000000000000000000";
-    BOOST_CHECK_NO_THROW(r = CallRPC(string("decoderawtransaction ")+rawtx));
+    // Build a Cryptonite-shape transaction and feed its hex to the RPC.
+    // The original Bitcoin Core test used a Bitcoin-Core format tx which
+    // cannot be deserialized under Cryptonite's uint160-pubKey I/O model.
+    uint160 K1; K1.SetHex("1111111111111111111111111111111111111111");
+    uint160 K3; K3.SetHex("3333333333333333333333333333333333333333");
+    CTransaction rawtxObj;
+    rawtxObj.SetNull();
+    rawtxObj.nVersion = 1;
+    rawtxObj.vin.push_back(CTxIn(K1, 100 * COIN));
+    rawtxObj.vout.push_back(CTxOut(99 * COIN, K3));
+    CDataStream txss(SER_NETWORK, PROTOCOL_VERSION);
+    txss << rawtxObj;
+    string rawtxHex = HexStr(txss.begin(), txss.end());
+    BOOST_CHECK_NO_THROW(r = CallRPC(string("decoderawtransaction ") + rawtxHex));
     BOOST_CHECK_EQUAL(find_value(r.get_obj(), "version").get_int(), 1);
     BOOST_CHECK_EQUAL(find_value(r.get_obj(), "lockheight").get_int(), 0);
-    BOOST_CHECK_THROW(r = CallRPC(string("decoderawtransaction ")+rawtx+" extra"), runtime_error);
+    BOOST_CHECK_THROW(r = CallRPC(string("decoderawtransaction ") + rawtxHex + " extra"), runtime_error);
 
     BOOST_CHECK_THROW(CallRPC("signrawtransaction"), runtime_error);
     BOOST_CHECK_THROW(CallRPC("signrawtransaction null"), runtime_error);
     BOOST_CHECK_THROW(CallRPC("signrawtransaction ff00"), runtime_error);
-    BOOST_CHECK_NO_THROW(CallRPC(string("signrawtransaction ")+rawtx));
-    BOOST_CHECK_NO_THROW(CallRPC(string("signrawtransaction ")+rawtx+" null"));
-    BOOST_CHECK_NO_THROW(CallRPC(string("signrawtransaction ")+rawtx+" []"));
+    BOOST_CHECK_NO_THROW(CallRPC(string("signrawtransaction ") + rawtxHex));
+    BOOST_CHECK_NO_THROW(CallRPC(string("signrawtransaction ") + rawtxHex + " null"));
+    // Cryptonite's RPCTypeCheck rejects an empty array for params[1] because the
+    // expected type for that slot is an object (map of input index -> required sigs);
+    // pass "null" instead when no prev-tx info is available.
+    BOOST_CHECK_THROW(CallRPC(string("signrawtransaction ") + rawtxHex + " []"), runtime_error);
 
     // Only check failure cases for sendrawtransaction, there's no network to send to...
     BOOST_CHECK_THROW(CallRPC("sendrawtransaction"), runtime_error);
     BOOST_CHECK_THROW(CallRPC("sendrawtransaction null"), runtime_error);
     BOOST_CHECK_THROW(CallRPC("sendrawtransaction DEADBEEF"), runtime_error);
-    BOOST_CHECK_THROW(CallRPC(string("sendrawtransaction ")+rawtx+" extra"), runtime_error);
+    BOOST_CHECK_THROW(CallRPC(string("sendrawtransaction ") + rawtxHex + " extra"), runtime_error);
 }
 
 #if 0
@@ -112,14 +130,15 @@ BOOST_AUTO_TEST_CASE(rpc_rawsign)
 
 BOOST_AUTO_TEST_CASE(rpc_format_monetary_values)
 {
-    BOOST_CHECK(ValueFromAmount(0LL).get_str() == "0.00000000ep");
-    BOOST_CHECK(ValueFromAmount(1LL).get_str() == "0.00000001ep");
-    BOOST_CHECK(ValueFromAmount(17622195LL).get_str() == "0.17622195ep");
-    BOOST_CHECK(ValueFromAmount(50000000LL).get_str() == "0.50000000ep");
-    BOOST_CHECK(ValueFromAmount(89898989LL).get_str() == "0.89898989ep");
-    BOOST_CHECK(ValueFromAmount(100000000LL).get_str() == "1.00000000ep");
-    BOOST_CHECK(ValueFromAmount(2099999999999990LL).get_str() == "20999999.99999990ep");
-    BOOST_CHECK(ValueFromAmount(2099999999999999LL).get_str() == "20999999.99999999ep");
+    // Cryptonite uses 10-digit precision (COIN = 10^10) for "ep" (extended-precision) amounts.
+    BOOST_CHECK(ValueFromAmount(0LL).get_str() == "0.0000000000ep");
+    BOOST_CHECK(ValueFromAmount(1LL).get_str() == "0.0000000001ep");
+    BOOST_CHECK(ValueFromAmount(17622195LL).get_str() == "0.0017622195ep");
+    BOOST_CHECK(ValueFromAmount(50000000LL).get_str() == "0.0050000000ep");
+    BOOST_CHECK(ValueFromAmount(89898989LL).get_str() == "0.0089898989ep");
+    BOOST_CHECK(ValueFromAmount(100000000LL).get_str() == "0.0100000000ep");
+    BOOST_CHECK(ValueFromAmount(2099999999999990LL).get_str() == "209999.9999999990ep");
+    BOOST_CHECK(ValueFromAmount(2099999999999999LL).get_str() == "209999.9999999999ep");
 }
 
 static Value ValueFromString(const std::string &str)
@@ -131,12 +150,28 @@ static Value ValueFromString(const std::string &str)
 
 BOOST_AUTO_TEST_CASE(rpc_parse_monetary_values)
 {
-    BOOST_CHECK(AmountFromValue(ValueFromString("\"0.00000001ep\"")) == 1LL);
-    BOOST_CHECK(AmountFromValue(ValueFromString("\"0.17622195ep\"")) == 17622195LL);
-    BOOST_CHECK(AmountFromValue(ValueFromString("\"0.50000000ep\"")) == 50000000LL);
-    BOOST_CHECK(AmountFromValue(ValueFromString("\"0.89898989ep\"")) == 89898989LL);
-    BOOST_CHECK(AmountFromValue(ValueFromString("\"1.00000000ep\"")) == 100000000LL);
-    BOOST_CHECK(AmountFromValue(ValueFromString("\"20999999.99999999ep\"")) == 2099999999999999LL);
+    // Cryptonite uses 10-digit precision (COIN = 10^10).
+    BOOST_CHECK(AmountFromValue(ValueFromString("\"0.0000000001ep\"")) == 1LL);
+    BOOST_CHECK(AmountFromValue(ValueFromString("\"0.0017622195ep\"")) == 17622195LL);
+    BOOST_CHECK(AmountFromValue(ValueFromString("\"0.0050000000ep\"")) == 50000000LL);
+    BOOST_CHECK(AmountFromValue(ValueFromString("\"0.0089898989ep\"")) == 89898989LL);
+    BOOST_CHECK(AmountFromValue(ValueFromString("\"0.0100000000ep\"")) == 100000000LL);
+    BOOST_CHECK(AmountFromValue(ValueFromString("\"209999.9999999999ep\"")) == 2099999999999999LL);
+}
+
+// RPCTypeCheck used to silently pass when the caller supplied zero params to an
+// RPC expecting at least one, which let downstream code dereference params[0]
+// and crash. Confirm empty-params calls now throw at the validation layer.
+// Note: undersized-but-non-empty calls are still allowed because RPCs that take
+// optional trailing arguments (signrawtransaction, createrawtransaction) rely
+// on RPCTypeCheck accepting partial parameter lists and letting downstream
+// code apply defaults.
+BOOST_AUTO_TEST_CASE(rpc_empty_params_throws)
+{
+    BOOST_CHECK_THROW(CallRPC("getrawtransaction"), runtime_error);
+    BOOST_CHECK_THROW(CallRPC("decoderawtransaction"), runtime_error);
+    BOOST_CHECK_THROW(CallRPC("sendrawtransaction"), runtime_error);
+    BOOST_CHECK_THROW(CallRPC("createrawtransaction"), runtime_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

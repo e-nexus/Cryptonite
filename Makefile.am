@@ -2,11 +2,12 @@ ACLOCAL_AMFLAGS = -I build-aux/m4
 SUBDIRS = src
 .PHONY: deploy
 
+DISTCHECK_CONFIGURE_FLAGS = --enable-wallet --with-incompatible-bdb --without-gui --without-miniupnpc --disable-hardening --enable-tests
+
 GZIP_ENV="-9n"
 
-BITCOIND_BIN=$(top_builddir)/src/bitcoind$(EXEEXT)
-BITCOIN_QT_BIN=$(top_builddir)/src/qt/bitcoin-qt$(EXEEXT)
-BITCOIN_CLI_BIN=$(top_builddir)/src/bitcoin-cli$(EXEEXT)
+BITCOIND_BIN=$(top_builddir)/src/cryptonited$(EXEEXT)
+BITCOIN_CLI_BIN=$(top_builddir)/src/cryptonite-cli$(EXEEXT)
 BITCOIN_WIN_INSTALLER=$(PACKAGE)-$(PACKAGE_VERSION)-win$(WINDOWS_BITS)-setup$(EXEEXT)
 
 OSX_APP=Bitcoin-Qt.app
@@ -41,19 +42,20 @@ distcheck-hook:
 	$(MKDIR_P) $(top_distdir)/_build/src/leveldb
 	cp -rf $(top_srcdir)/src/leveldb/* $(top_distdir)/_build/src/leveldb/
 	-$(MAKE) -C $(top_distdir)/_build/src/leveldb clean
+	$(MKDIR_P) $(top_distdir)/_build/sub/src/leveldb
+	cp -rf $(top_srcdir)/src/leveldb/* $(top_distdir)/_build/sub/src/leveldb/
 
 distcleancheck:
 	@:
 
-$(BITCOIN_WIN_INSTALLER): $(BITCOIND_BIN) $(BITCOIN_QT_BIN) $(BITCOIN_CLI_BIN)
+$(BITCOIN_WIN_INSTALLER): $(BITCOIND_BIN) $(BITCOIN_CLI_BIN)
 	$(MKDIR_P) $(top_builddir)/release
 	STRIPPROG="$(STRIP)" $(INSTALL_STRIP_PROGRAM) $(BITCOIND_BIN) $(top_builddir)/release
-	STRIPPROG="$(STRIP)" $(INSTALL_STRIP_PROGRAM) $(BITCOIN_QT_BIN) $(top_builddir)/release
 	STRIPPROG="$(STRIP)" $(INSTALL_STRIP_PROGRAM) $(BITCOIN_CLI_BIN) $(top_builddir)/release
 	@test -f $(MAKENSIS) && $(MAKENSIS) $(top_builddir)/share/setup.nsi || \
 	  echo error: could not build $@
 
-$(BITCOIND_BIN) $(BITCOIN_QT_BIN) $(BITCOIN_CLI_BIN):
+$(BITCOIND_BIN) $(BITCOIN_CLI_BIN):
 	make -C $(dir $@) $(notdir $@)
 
 $(OSX_APP)/Contents/PkgInfo:

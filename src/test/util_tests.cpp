@@ -178,6 +178,8 @@ BOOST_AUTO_TEST_CASE(util_WildcardMatch)
 
 BOOST_AUTO_TEST_CASE(util_FormatMoney)
 {
+    // FormatMoney emits COIN_FRACT_DIGITS (10) fractional digits and trims
+    // trailing zeros, so every sub-cent value is distinguishable in display.
     BOOST_CHECK_EQUAL(FormatMoney(0, false), "0.00");
     BOOST_CHECK_EQUAL(FormatMoney((COIN/10000)*123456789, false), "12345.6789");
     BOOST_CHECK_EQUAL(FormatMoney(COIN, true), "+1.00");
@@ -201,6 +203,10 @@ BOOST_AUTO_TEST_CASE(util_FormatMoney)
     BOOST_CHECK_EQUAL(FormatMoney(COIN/1000000, false), "0.000001");
     BOOST_CHECK_EQUAL(FormatMoney(COIN/10000000, false), "0.0000001");
     BOOST_CHECK_EQUAL(FormatMoney(COIN/100000000, false), "0.00000001");
+    // Sub-cent precision: every distinct base-unit value produces a distinct string.
+    BOOST_CHECK_EQUAL(FormatMoney(1, false), "0.0000000001");
+    BOOST_CHECK_EQUAL(FormatMoney(99, false), "0.0000000099");
+    BOOST_CHECK_EQUAL(FormatMoney(100, false), "0.00000001");
 }
 
 BOOST_AUTO_TEST_CASE(util_ParseMoney)
@@ -247,7 +253,29 @@ BOOST_AUTO_TEST_CASE(util_ParseMoney)
     BOOST_CHECK(ParseMoney("0.00000001", ret));
     BOOST_CHECK_EQUAL(ret, COIN/100000000);
 
-    // Attempted 63 bit overflow should fail
+    // Sub-cent precision: parse must honour every base-unit value.
+    BOOST_CHECK(ParseMoney("0.0000000001", ret));
+    BOOST_CHECK_EQUAL(ret, 1);
+    BOOST_CHECK(ParseMoney("0.0000000099", ret));
+    BOOST_CHECK_EQUAL(ret, 99);
+
+    // FormatMoney/ParseMoney round-trip: every non-negative value the
+    // formatter can emit must parse back to the exact same base-unit amount.
+    int64_t rt_values[] = {0, 1, 99, 100, 1000, 9999999,
+                           (int64_t)(COIN/100), (int64_t)(COIN/10),
+                           (int64_t)COIN, (int64_t)(COIN*10),
+                           (int64_t)(COIN*100000000)};
+    for (int64_t amt : rt_values)
+    {
+        std::string s = FormatMoney(amt);
+        int64_t parsed = 0;
+        BOOST_CHECK_MESSAGE(ParseMoney(s, parsed),
+            "ParseMoney rejected FormatMoney output for " << amt << ": " << s);
+        BOOST_CHECK_EQUAL(parsed, amt);
+    }
+
+    // Inputs with more than COIN_FRACT_DIGITS fractional digits are rejected.
+    BOOST_CHECK(!ParseMoney("0.00000000001", ret));
     BOOST_CHECK(!ParseMoney("92233720368.54775808", ret));
 }
 

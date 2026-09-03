@@ -5,8 +5,6 @@ LIBLEVELDB += $(top_builddir)/src/leveldb/libleveldb.a
 LIBMEMENV  += $(top_builddir)/src/leveldb/libmemenv.a
 endif
 
-LIBLMDB = $(top_builddir)/src/liblmdb/liblmdb.a
-
 
 AM_CPPFLAGS =  $(INCLUDES) \
   -I$(top_builddir)/src/obj \
@@ -28,9 +26,6 @@ if EMBEDDED_LEVELDB
 $(LIBLEVELDB) $(LIBMEMENV):
 	$(MAKE) -C $(top_builddir)/src leveldb/$(@F)
 endif
-
-$(LIBLMDB):
-	$(MAKE) -C $(top_builddir)/src liblmdb/$(@F)
 
 
 $(LIBBITCOINQT):

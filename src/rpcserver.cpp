@@ -18,6 +18,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
+#include <boost/asio/deadline_timer.hpp>
 #include <boost/bind/bind.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/iostreams/concepts.hpp>
@@ -35,11 +36,14 @@ using namespace json_spirit;
 static std::string strRPCUserColonPass;
 
 // These are created by StartRPCThreads, destroyed in StopRPCThreads
-static asio::io_service* rpc_io_service = nullptr;
-static map<string, boost::shared_ptr<deadline_timer> > deadlineTimers;
+static asio::io_context* rpc_io_service = nullptr;
+static map<string, boost::shared_ptr<boost::asio::deadline_timer> > deadlineTimers;
 static ssl::context* rpc_ssl_context = nullptr;
 static boost::thread_group* rpc_worker_group = nullptr;
-static boost::asio::io_service::work *rpc_dummy_work = nullptr;
+// Boost 1.66+ removed io_context::work; the modern replacement is
+// executor_work_guard<io_context::executor_type>.
+typedef boost::asio::executor_work_guard<boost::asio::io_context::executor_type> rpc_work_guard_t;
+static rpc_work_guard_t* rpc_dummy_work = nullptr;
 static bool fRPCRunning=false;
 
 void RPCTypeCheck(const Array& params,
@@ -61,6 +65,8 @@ void RPCTypeCheck(const Array& params,
         }
         i++;
     }
+    if (params.empty() && !typesExpected.empty())
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "No parameters supplied");
 }
 
 void RPCTypeCheck(const Object& o,
@@ -455,17 +461,26 @@ void ErrorReply(std::ostream& stream, const Object& objError, const Value& id)
 
 bool ClientAllowed(const boost::asio::ip::address& address)
 {
-    // Make sure that IPv4-compatible and IPv4-mapped IPv6 addresses are treated as IPv4 addresses
+    // Make sure that IPv4-mapped IPv6 addresses are treated as IPv4 addresses.
+    // Boost.Asio 1.66+ removed address_v6::is_v4_compatible() and address_v6::to_v4();
+    // the surviving path for traffic from dual-stack sockets is the v4-mapped form
+    // (::ffff:a.b.c.d), which we extract by reading the trailing 4 bytes of the
+    // v6 address and constructing an address_v4 directly.
     if (address.is_v6()
-     && (address.to_v6().is_v4_compatible()
-      || address.to_v6().is_v4_mapped()))
-        return ClientAllowed(address.to_v6().to_v4());
+     && address.to_v6().is_v4_mapped())
+    {
+        const auto bytes = address.to_v6().to_bytes();
+        const boost::asio::ip::address_v4::bytes_type v4bytes = {
+            { bytes[12], bytes[13], bytes[14], bytes[15] }
+        };
+        return ClientAllowed(boost::asio::ip::address_v4(v4bytes));
+    }
 
     if (address == asio::ip::address_v4::loopback()
      || address == asio::ip::address_v6::loopback()
      || (address.is_v4()
          // Check whether IPv4 addresses match 127.0.0.0/8 (loopback subnet)
-      && (address.to_v4().to_ulong() & 0xff000000) == 0x7f000000))
+      && (address.to_v4().to_uint() & 0xff000000) == 0x7f000000))
         return true;
 
     const string strAddress = address.to_string();
@@ -541,7 +556,7 @@ static void RPCListen(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketA
                    ssl::context& context,
                    const bool fUseSSL)
 {
-    // Pass the executor instead of the io_service
+    // Pass the executor instead of the io_context
     AcceptedConnectionImpl<Protocol>* conn = new AcceptedConnectionImpl<Protocol>(acceptor->get_executor(), context, fUseSSL);
 
     acceptor->async_accept(
@@ -628,7 +643,7 @@ void StartRPCThreads()
     }
 
     assert(rpc_io_service == nullptr);
-    rpc_io_service = new asio::io_service();
+    rpc_io_service = new asio::io_context();
     #if ((BOOST_VERSION / 100000) > 1) && ((BOOST_VERSION / 100 % 1000) >= 47)
     rpc_ssl_context = new ssl::context(*rpc_io_service, ssl::context::sslv23);
     #else
@@ -642,12 +657,12 @@ void StartRPCThreads()
         rpc_ssl_context->set_options(ssl::context::no_sslv2);
 
         fs::path pathCertFile(GetArg("-rpcsslcertificatechainfile", "server.cert"));
-        if (!pathCertFile.is_complete()) pathCertFile = fs::path(GetDataDir()) / pathCertFile;
+        if (!pathCertFile.is_absolute()) pathCertFile = fs::path(GetDataDir()) / pathCertFile;
         if (fs::exists(pathCertFile)) rpc_ssl_context->use_certificate_chain_file(pathCertFile.string());
         else LogPrintf("ThreadRPCServer ERROR: missing server certificate file %s\n", pathCertFile.string());
 
         fs::path pathPKFile(GetArg("-rpcsslprivatekeyfile", "server.pem"));
-        if (!pathPKFile.is_complete()) pathPKFile = fs::path(GetDataDir()) / pathPKFile;
+        if (!pathPKFile.is_absolute()) pathPKFile = fs::path(GetDataDir()) / pathPKFile;
         if (fs::exists(pathPKFile)) rpc_ssl_context->use_private_key_file(pathPKFile.string(), ssl::context::pem);
         else LogPrintf("ThreadRPCServer ERROR: missing server private key file %s\n", pathPKFile.string());
 
@@ -677,7 +692,7 @@ void StartRPCThreads()
         acceptor->set_option(boost::asio::ip::v6_only(loopback), v6_only_error);
 
         acceptor->bind(endpoint);
-        acceptor->listen(socket_base::max_connections);
+        acceptor->listen(socket_base::max_listen_connections);
 
         RPCListen(acceptor, *rpc_ssl_context, fUseSSL);
 
@@ -699,7 +714,7 @@ void StartRPCThreads()
             acceptor->open(endpoint.protocol());
             acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
             acceptor->bind(endpoint);
-            acceptor->listen(socket_base::max_connections);
+            acceptor->listen(socket_base::max_listen_connections);
 
             RPCListen(acceptor, *rpc_ssl_context, fUseSSL);
 
@@ -719,7 +734,7 @@ void StartRPCThreads()
 
     rpc_worker_group = new boost::thread_group();
     for (int i = 0; i < GetArg("-rpcthreads", 4); i++)
-        rpc_worker_group->create_thread(boost::bind(&asio::io_service::run, rpc_io_service));
+        rpc_worker_group->create_thread(boost::bind(&asio::io_context::run, rpc_io_service));
 
     fRPCRunning=true;
 }
@@ -728,12 +743,12 @@ void StartDummyRPCThread()
 {
     if(rpc_io_service == nullptr)
     {
-        rpc_io_service = new asio::io_service();
+        rpc_io_service = new asio::io_context();
         /* Create dummy "work" to keep the thread from exiting when no timeouts active,
-         * see http://www.boost.org/doc/libs/1_51_0/doc/html/boost_asio/reference/io_service.html#boost_asio.reference.io_service.stopping_the_io_service_from_running_out_of_work */
-        rpc_dummy_work = new asio::io_service::work(*rpc_io_service);
+         * see http://www.boost.org/doc/libs/1_51_0/doc/html/boost_asio/reference/io_context.html#boost_asio.reference.io_context.stopping_the_io_context_from_running_out_of_work */
+        rpc_dummy_work = new rpc_work_guard_t((*rpc_io_service).get_executor());
         rpc_worker_group = new boost::thread_group();
-        rpc_worker_group->create_thread(boost::bind(&asio::io_service::run, rpc_io_service));
+        rpc_worker_group->create_thread(boost::bind(&asio::io_context::run, rpc_io_service));
     }
     fRPCRunning=true;
 }

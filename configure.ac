@@ -170,7 +170,7 @@ fi
 if test "x$CXXFLAGS_overridden" = "xno"; then
   CXXFLAGS="$CXXFLAGS -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter"
 fi
-CPPFLAGS="$CPPFLAGS -DBOOST_ASIO_ENABLE_OLD_SERVICES -DBOOST_SPIRIT_THREADSAFE -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS"
+CPPFLAGS="$CPPFLAGS -DBOOST_SPIRIT_THREADSAFE -DBOOST_FILESYSTEM_NO_DEPRECATED -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS"
 
 AC_LANG_PUSH([C++])
 
@@ -576,10 +576,7 @@ if test x$use_pkgconfig = xyes; then
     [
       PKG_CHECK_MODULES([SSL], [libssl], [INCLUDES="$INCLUDES $SSL_CFLAGS"; LIBS="$LIBS $SSL_LIBS"], [AC_MSG_ERROR(openssl  not found.)])
       PKG_CHECK_MODULES([CRYPTO], [libcrypto], [INCLUDES="$INCLUDES $CRYPTO_CFLAGS"; LIBS="$LIBS $CRYPTO_LIBS"], [AC_MSG_ERROR(libcrypto  not found.)])
-      BITCOIN_QT_CHECK([PKG_CHECK_MODULES([PROTOBUF], [protobuf], [have_protobuf=yes], [BITCOIN_QT_FAIL(libprotobuf not found)])])
-      if test x$use_qr != xno; then
-        BITCOIN_QT_CHECK([PKG_CHECK_MODULES([QR], [libqrencode], [have_qrencode=yes], [have_qrencode=no])])
-      fi
+      dnl Qt/PROTOBUF/QR detection is intentionally skipped — the GUI build is disabled.
     ]
   )
 else
@@ -589,14 +586,10 @@ else
   AC_CHECK_HEADER([openssl/ssl.h],, AC_MSG_ERROR(libssl headers missing),)
   AC_CHECK_LIB([ssl],         [main],, AC_MSG_ERROR(libssl missing))
 
-  BITCOIN_QT_CHECK(AC_CHECK_LIB([protobuf] ,[main],,BITCOIN_QT_FAIL(libprotobuf not found)))
-  if test x$use_qr != xno; then
-    BITCOIN_QT_CHECK([AC_CHECK_LIB([qrencode], [main],, [have_qrencode=no])])
-    BITCOIN_QT_CHECK([AC_CHECK_HEADER([qrencode.h],, have_qrencode=no)])
-  fi
+  dnl Qt/PROTOBUF/QR detection is intentionally skipped — the GUI build is disabled.
 fi
 
-BITCOIN_QT_PATH_PROGS([PROTOC], [protoc],$protoc_bin_path)
+dnl BITCOIN_QT_PATH_PROGS intentionally skipped — the GUI build is disabled.
 
 AC_MSG_CHECKING([whether to build bitcoind])
 AM_CONDITIONAL([BUILD_BITCOIND], [test x$build_bitcoind = xyes])
@@ -606,8 +599,16 @@ AC_MSG_CHECKING([whether to build bitcoin-cli])
 AM_CONDITIONAL([BUILD_BITCOIN_CLI], [test x$build_bitcoin_cli = xyes])
 AC_MSG_RESULT($build_bitcoin_cli)
 
-dnl sets $bitcoin_enable_qt, $bitcoin_enable_qt_test, $bitcoin_enable_qt_dbus
-BITCOIN_QT_CONFIGURE([$use_pkgconfig], [qt4])
+dnl Qt4 detection removed — Qt4 is unsupported on modern toolchains.
+dnl The Qt build is disabled by default; passing --with-qt will be a no-op until
+dnl the Qt sources are ported to Qt5. Skipping here prevents BITCOIN_QT_CONFIGURE
+dnl from invoking qmake probes that hard-error on missing Qt4 headers.
+bitcoin_enable_qt=no
+bitcoin_enable_qt_test=no
+bitcoin_enable_qt_dbus=no
+if test x$with_qt != xno; then
+  AC_MSG_WARN([Qt GUI is disabled: the codebase targets Qt4 APIs which are unsupported on modern toolchains. Re-enable by replacing BITCOIN_QT_CONFIGURE with a Qt5-capable macro and porting src/qt/ to Qt5.])
+fi
 
 if test x$use_ipv6 = xyes; then
   dnl Check for ipv6 build requirements
@@ -784,7 +785,7 @@ AC_SUBST(LEVELDB_TARGET_FLAGS)
 AC_SUBST(BUILD_TEST)
 AC_SUBST(BUILD_QT)
 AC_SUBST(BUILD_TEST_QT)
-AC_CONFIG_FILES([Makefile src/Makefile src/test/Makefile src/qt/Makefile src/qt/test/Makefile share/setup.nsi share/qt/Info.plist])
+AC_CONFIG_FILES([Makefile src/Makefile src/test/Makefile share/setup.nsi])
 AC_CONFIG_FILES([qa/pull-tester/run-bitcoind-for-test.sh],[chmod +x qa/pull-tester/run-bitcoind-for-test.sh])
 AC_CONFIG_FILES([qa/pull-tester/build-tests.sh],[chmod +x qa/pull-tester/build-tests.sh])
 AC_OUTPUT

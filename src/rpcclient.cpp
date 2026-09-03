@@ -39,7 +39,7 @@ Object CallRPC(const string& strMethod, const Array& params)
 
     // Connect to localhost
     bool fUseSSL = GetBoolArg("-rpcssl", false);
-    asio::io_service io_service;
+    asio::io_context io_service;
 #if ((BOOST_VERSION / 100000) > 1) && ((BOOST_VERSION / 100 % 1000) >= 47)
     ssl::context context(io_service, ssl::context::sslv23);
 #else

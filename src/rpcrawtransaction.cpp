@@ -443,7 +443,7 @@ Value listbalances(const Array& params, bool fHelp)
 //sa ToDo: Update documentation
 Value createrawtransaction(const Array& params, bool fHelp)
 {
-    if (fHelp || (params.size() < 2 && params.size() > 4 ))
+    if (fHelp || params.size() < 2 || params.size() > 4)
         throw runtime_error(
             "createrawtransaction [{\"txid\":\"id\",\"vout\":n},...] {\"address\":amount,...}\n"
             "\nCreate a transaction spending the given inputs and sending to the given addresses.\n"

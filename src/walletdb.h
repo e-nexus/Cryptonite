@@ -36,6 +36,7 @@ enum DBErrors
     DB_NEED_REWRITE
 };
 
+#ifdef ENABLE_WALLET
 class CKeyMetadata
 {
 public:
@@ -129,5 +130,7 @@ public:
 };
 
 bool BackupWallet(const CWallet& wallet, const std::string& strDest);
+
+#endif // ENABLE_WALLET
 
 #endif // BITCOIN_WALLETDB_H

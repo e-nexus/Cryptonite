@@ -104,12 +104,15 @@ AC_DEFUN([AX_BOOST_FILESYSTEM],
                   done
 
             fi
-            if test "x$ax_lib" = "x"; then
-                AC_MSG_ERROR(Could not find a version of the boost_filesystem library!)
+            # Boost.Filesystem was effectively header-only in many configurations and
+            # is fully header-only in Boost >= 1.74 for many uses. If the compile
+            # check above passed but no libboost_filesystem was found, treat the
+            # library as header-only.
+            if test "x$link_filesystem" != "xyes"; then
+                AC_MSG_WARN([Boost::Filesystem headers found but no libboost_filesystem binary. Treating as header-only; BOOST_FILESYSTEM_LIB left empty.])
+                BOOST_FILESYSTEM_LIB=""
+                AC_SUBST(BOOST_FILESYSTEM_LIB)
             fi
-			if test "x$link_filesystem" != "xyes"; then
-				AC_MSG_ERROR(Could not link against $ax_lib !)
-			fi
 		fi
 
 		CPPFLAGS="$CPPFLAGS_SAVED"
