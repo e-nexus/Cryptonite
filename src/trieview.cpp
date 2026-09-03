@@ -7,11 +7,63 @@
 #include "init.h"
 #ifdef ENABLE_WALLET
 #include "wallet.h"
-#endif	
+#endif
+
+#include <boost/filesystem/exception.hpp>
+#include <boost/filesystem/operations.hpp>
+#include <cerrno>
+#include <cstring>
+#include <leveldb/crc32c.h>
 
 extern map<uint256, CBlockIndex*> mapBlockIndex;
 
 CCriticalSection cs_trie;
+
+namespace {
+
+// On-disk format for the account trie snapshot.
+//
+// Layout (little-endian, no padding):
+//   offset 0   : 4 bytes  magic           = "XCNA"
+//   offset 4   : 4 bytes  format version  = 1
+//   offset 8   : 4 bytes  payload length  (uint32)
+//   offset 12  : 4 bytes  CRC32C of (bestBlock || payload), masked per LevelDB convention
+//   offset 16  : 32 bytes bestBlock        (uint256, big-endian wire form)
+//   offset 48  : N bytes  payload          (serialized trie via TrieEngine::SubTrie)
+//
+// Atomicity is provided by writing the new file to trie.dat.tmp, fsyncing,
+// and renaming over trie.dat. The CRC32C lets the reader detect partial
+// writes from crashes that interrupted the tmp file before the rename.
+//
+// CRC32C (Castagnoli) is preferred over CRC32 (Ethernet) because every
+// modern x86_64 / arm64 CPU ships a hardware implementation via SSE4.2 /
+// CRC32 instructions, the polynomial has better error-detection
+// properties for short messages, and it is the same primitive LevelDB
+// uses internally for its own log records and SST blocks. The vendored
+// implementation in src/leveldb/util/crc32c.{h,cc} is already linked into
+// the binary via libleveldb.a, so this costs zero new dependencies.
+const char        TRIE_FILE_MAGIC[4]   = { 'X', 'C', 'N', 'A' };
+const uint32_t    TRIE_FILE_VERSION    = 1;
+const size_t      TRIE_FILE_HEADER_LEN = 16;
+const size_t      TRIE_BESTBLOCK_LEN   = 32;
+const char*       TRIE_FILE_TMP_SUFFIX = ".tmp";
+
+// Move a file we have decided not to trust out of the way so the next
+// start does not re-trigger the same failure. The suffix records the
+// reason we rejected the file so an operator triaging debug.log can
+// correlate. Throws on filesystem errors; the caller is responsible for
+// wrapping in a try/catch if it cannot tolerate the original file
+// being left in place. In practice the call sites are best-effort
+// paths and the daemon must come up regardless, so they catch.
+void ArchiveTrieFile(const boost::filesystem::path& src, const std::string& reason)
+{
+    namespace fs = boost::filesystem;
+    fs::path archive = src.parent_path() / (src.filename().string() + "." + reason + "-" + std::to_string(GetTime()));
+    fs::rename(src, archive);
+    LogPrintf("WARNING: archived %s -> %s (%s)\n", src.string().c_str(), archive.string().c_str(), reason.c_str());
+}
+
+} // anonymous namespace
 
 bool LookupBlockIndex(const uint256& hash, CBlockIndex** ppindex)
 {
@@ -26,64 +78,159 @@ bool LookupBlockIndex(const uint256& hash, CBlockIndex** ppindex)
 }
 
 TrieView::TrieView(){
-    //TODO: load the crap from file
     m_bestBlock = 0;
     m_root = 0;
 
     boost::filesystem::path pathDebug = GetDataDir() / "trie.dat";
+
+    // A tmp file from a previous crashed write is safe to ignore: the
+    // next successful Flush will overwrite it, and on a clean start we
+    // just tidy up so the datadir stays clean. Throws on filesystem
+    // errors; we catch and log because the daemon must come up even if
+    // the datadir is partially inaccessible.
+    {
+        boost::filesystem::path pathTmp = pathDebug;
+        pathTmp += TRIE_FILE_TMP_SUFFIX;
+        try {
+            if (boost::filesystem::remove(pathTmp))
+                LogPrintf("Discarded stale trie.dat.tmp from a previous unclean shutdown\n");
+        } catch (const boost::filesystem::filesystem_error& e) {
+            LogPrintf("WARNING: could not remove stale trie.dat.tmp (%s)\n", e.what());
+        }
+    }
+    FILE* filein = fopen(pathDebug.string().c_str(), "rb");
+    if (!filein)
+        return; // first run or freshly-archived -- caller rebuilds via slice-sync
+
     printf("Opening %s\n", pathDebug.string().c_str());
 
-    FILE* filein = fopen(pathDebug.string().c_str(), "rb");
-    if(!filein)
-        return;
+    // fileOpen tracks whether filein still holds an open stdio FILE so
+    // every code path closes it at most once. The fail lambda below is
+    // reused by both the early-exit branches (where filein is still
+    // open) and the post-read branches (where the long-body read has
+    // already closed it); without the guard, a corrupted-but-fully-
+    // read body would close the FILE twice and glibc aborts with
+    // "free(): double free detected" inside the second fclose.
+    bool fileOpen = true;
 
-    // A truncated or partial trie.dat must NOT abort the daemon: fall back
-    // to a null root so the slice-sync engine can rebuild from genesis.
-    // On any short read we close the file, leave m_root = nullptr, and
-    // log a warning. The caller in init.cpp sees m_bestBlock == 0 and
-    // triggers the full slice-sync flow.
-    size_t got;
-    got = fread(&m_bestBlock, 1, 32, filein);
-    if (got != 32) {
-        LogPrintf("WARNING: trie.dat truncated reading bestBlock (got %zu), falling back to slice-sync\n", got);
-        fclose(filein);
-        return;
-    }
-    uint32_t sz=0;
-    got = fread(&sz, 1, 4, filein);
-    if (got != 4) {
-        LogPrintf("WARNING: trie.dat truncated reading size (got %zu), falling back to slice-sync\n", got);
-        fclose(filein);
-        return;
-    }
-    if (sz == 0 || sz > 64*1024*1024) {
-        // Sanity cap: a real trie on this chain is well under 64MB; an
-        // absurd size is corruption or an attacker-truncated file. Bail
-        // rather than allocating gigabytes.
-        LogPrintf("WARNING: trie.dat size %u looks invalid, falling back to slice-sync\n", sz);
-        fclose(filein);
-        return;
-    }
-    uint8_t *buf = (uint8_t*)malloc(sz);
-    got = fread(buf, sz, 1, filein);
-    if (got != 1) {
-        LogPrintf("WARNING: trie.dat truncated reading body (got %zu/%u), falling back to slice-sync\n", got, sz);
-        free(buf);
-        fclose(filein);
-        return;
-    }
-    fclose(filein);
-    m_root = TrieNode::Deserialize(buf,sz);
-    free(buf);
+    // Helper: any failure path from here on must close filein (if it
+    // is still open), archive the file with a reason tag, and leave
+    // m_root/m_bestBlock at the "unbuilt" defaults so slice-sync can
+    // rebuild from genesis. Archive is wrapped in try/catch: the
+    // daemon must come up even if the rename fails (e.g. permission
+    // denied on the datadir), so we log and continue instead of
+    // propagating the exception.
+    auto fail = [&](const char* reason, const char* detail) {
+        LogPrintf("WARNING: trie.dat rejected (%s%s%s); archiving and falling back to slice-sync\n",
+                  reason,
+                  detail ? ": " : "",
+                  detail ? detail : "");
+        if (fileOpen) {
+            fclose(filein);
+            fileOpen = false;
+        }
+        try {
+            ArchiveTrieFile(pathDebug, reason);
+        } catch (const boost::filesystem::filesystem_error& e) {
+            LogPrintf("WARNING: could not archive %s (%s); leaving in place\n",
+                      pathDebug.string().c_str(), e.what());
+        }
+    };
 
-    if (m_root == nullptr) {
-        // Deserialize rejected the payload (invalid trie encoding). Treat
-        // the file as unusable rather than aborting.
-        LogPrintf("WARNING: trie.dat deserialize failed, falling back to slice-sync\n");
+    // Read fixed-size header.
+    unsigned char hdr[TRIE_FILE_HEADER_LEN];
+    size_t got = fread(hdr, 1, TRIE_FILE_HEADER_LEN, filein);
+    if (got != TRIE_FILE_HEADER_LEN) {
+        fail("truncated-header", nullptr);
         return;
     }
 
-    LogPrintf("Loaded trie at %s %d\n", m_bestBlock.GetHex().c_str(), sz);
+    // Magic check -- separates "our format" from anything else that
+    // happens to be in the file (random data, a future fork, an older
+    // unversioned build, a copy-pasted wallet.dat, etc.).
+    if (memcmp(hdr, TRIE_FILE_MAGIC, 4) != 0) {
+        char want[5]; memcpy(want, TRIE_FILE_MAGIC, 4); want[4] = 0;
+        char gotstr[5]; memcpy(gotstr, hdr, 4); gotstr[4] = 0;
+        char detail[64];
+        snprintf(detail, sizeof(detail), "got \"%s\", want \"%s\"", gotstr, want);
+        fail("bad-magic", detail);
+        return;
+    }
+
+    uint32_t version;
+    memcpy(&version, hdr + 4, 4);
+    if (version != TRIE_FILE_VERSION) {
+        char detail[32];
+        snprintf(detail, sizeof(detail), "got v%u", version);
+        fail("bad-version", detail);
+        return;
+    }
+
+    uint32_t payload_len;
+    memcpy(&payload_len, hdr + 8, 4);
+
+    // Same sanity cap as the legacy reader: a real trie is well under
+    // 64MB; an absurd value is corruption or an attacker-crafted file.
+    if (payload_len == 0 || payload_len > 64u * 1024u * 1024u) {
+        char detail[32];
+        snprintf(detail, sizeof(detail), "len=%u", payload_len);
+        fail("bad-length", detail);
+        return;
+    }
+
+    uint32_t stored_crc;
+    memcpy(&stored_crc, hdr + 12, 4);
+
+    // Read bestBlock + payload into a single contiguous buffer so the
+    // CRC32C can cover them in one pass.
+    const size_t body_len = TRIE_BESTBLOCK_LEN + payload_len;
+    unsigned char* body = (unsigned char*)malloc(body_len);
+    if (!body) {
+        fail("oom", nullptr);
+        return;
+    }
+    got = fread(body, 1, body_len, filein);
+    if (fileOpen) {
+        fclose(filein);
+        fileOpen = false;
+    }
+    if (got != body_len) {
+        char detail[64];
+        snprintf(detail, sizeof(detail), "got %zu of %zu bytes", got, body_len);
+        free(body);
+        fail("truncated-body", detail);
+        return;
+    }
+
+    // CRC32C verification -- catches partial writes, bit-rot, and any
+    // non-crash corruption. CRC32C over (bestBlock || payload) keeps
+    // the two fields coupled: an attacker who can flip one cannot flip
+    // the other without invalidating the checksum.
+    uint32_t actual_crc = leveldb::crc32c::Value(reinterpret_cast<const char*>(body), body_len);
+    if (leveldb::crc32c::Unmask(stored_crc) != actual_crc) {
+        free(body);
+        fail("checksum-mismatch", nullptr);
+        return;
+    }
+
+    // Extract bestBlock and deserialize the trie payload. From here on
+    // any failure is a content-level problem with the CRC-validated
+    // bytes; we have already proven the file is intact, so a Deserialize
+    // failure means the trie engine changed shape since the file was
+    // written -- worth knowing about, but the daemon must still come up.
+    uint256 bestBlock;
+    memcpy(&bestBlock, body, TRIE_BESTBLOCK_LEN);
+    TrieNode* root = TrieNode::Deserialize(body + TRIE_BESTBLOCK_LEN, payload_len);
+    free(body);
+
+    if (root == nullptr) {
+        fail("deserialize-failed", nullptr);
+        return;
+    }
+
+    m_bestBlock = bestBlock;
+    m_root = root;
+    LogPrintf("Loaded trie at %s (%u bytes)\n", m_bestBlock.GetHex().c_str(), payload_len);
 }
 
 void TrieView::Force(TrieNode *root, uint256 block){
@@ -752,31 +899,134 @@ bool TrieView::Flush(){
         return false;
     }
     LogPrintf("Writing file %s\n", m_bestBlock.GetHex().c_str());
-    //TODO: this sucks. need to move to mmap asap
-    boost::filesystem::path pathDebug = GetDataDir() / "trie.dat";
-    FILE* fileout = fopen(pathDebug.string().c_str(), "wb");
-    if(!fileout)
-        return false;
 
+    namespace fs = boost::filesystem;
+    fs::path pathTrie = GetDataDir() / "trie.dat";
+    fs::path pathTrieTmp = pathTrie;
+    pathTrieTmp += TRIE_FILE_TMP_SUFFIX;
+
+    // Serialize the trie into a heap buffer under cs_main so concurrent
+    // m_root mutations cannot race with us. The on-disk budget is the
+    // same heuristic the legacy code used: 200 bytes per leaf is an
+    // overestimate that grows the buffer large enough for any realistic
+    // SubTrie output; SubTrie() itself returns false if pos overflows.
     size_t fsize = m_root->Children() * 200; //TODO: define this as max size of trie node
-    uint8_t *buf = (uint8_t*)malloc(fsize);
-    uint32_t pos=0;
-    uint32_t nodes=0;
-    //m_root->Print();
-    uint160_t left,right;
-    left=0;
-    memset(&right,0xFF,20);
-    if(!TrieEngine::SubTrie(m_root,left,right,buf,&pos,fsize,&nodes)){
+    uint8_t* buf = (uint8_t*)malloc(fsize);
+    if (!buf) {
+        LogPrintf("WARNING: Flush: alloc(%zu) failed\n", fsize);
+        return false;
+    }
+    uint32_t pos = 0;
+    uint32_t nodes = 0;
+    uint160_t left, right;
+    left = 0;
+    memset(&right, 0xFF, 20);
+    if (!TrieEngine::SubTrie(m_root, left, right, buf, &pos, fsize, &nodes)) {
+        LogPrintf("WARNING: Flush: SubTrie overflow (budget %zu, used %u)\n", fsize, pos);
         free(buf);
-        fclose(fileout);
+        return false;
+    }
+    LogPrintf("Serialized: %d bytes\n", pos);
+
+    // Pack the on-disk record into one contiguous buffer. Layout:
+    //   out[0..4]                       = magic           "XCNA"
+    //   out[4..8]                       = version         TRIE_FILE_VERSION
+    //   out[8..12]                      = payload_len     uint32, little-endian
+    //   out[12..16]                     = CRC32C          masked, covers the body below
+    //   out[16..48]                     = bestBlock       uint256
+    //   out[48 .. 48+payload_len)       = payload         serialized trie
+    // The CRC32C slot is filled last, after bestBlock and the payload
+    // are in their final positions; covering both fields together
+    // means an attacker (or a partial-write bug) cannot flip one
+    // without invalidating the checksum on the other.
+    const uint32_t payload_len = pos;
+    const size_t   body_len     = TRIE_BESTBLOCK_LEN + payload_len;
+    unsigned char* out = (unsigned char*)malloc(TRIE_FILE_HEADER_LEN + body_len);
+    if (!out) {
+        LogPrintf("WARNING: Flush: alloc(%zu) for output buffer failed\n",
+                  TRIE_FILE_HEADER_LEN + body_len);
+        free(buf);
+        return false;
+    }
+    memcpy(out,                       TRIE_FILE_MAGIC, 4);
+    uint32_t version = TRIE_FILE_VERSION;
+    memcpy(out + 4,                   &version, 4);
+    memcpy(out + 8,                   &payload_len, 4);
+    // CRC slot is left zero here; filled after bestBlock + payload.
+    memset(out + 12,                  0, 4);
+    memcpy(out + TRIE_FILE_HEADER_LEN, &m_bestBlock, TRIE_BESTBLOCK_LEN);
+    memcpy(out + TRIE_FILE_HEADER_LEN + TRIE_BESTBLOCK_LEN, buf, payload_len);
+    free(buf);
+    // CRC covers the body (bestBlock || payload), starting at the
+    // beginning of the body so the read-side can validate the exact
+    // same range.
+    uint32_t crc = leveldb::crc32c::Value(
+        reinterpret_cast<const char*>(out + TRIE_FILE_HEADER_LEN), body_len);
+    crc = leveldb::crc32c::Mask(crc);
+    memcpy(out + 12,                  &crc, 4);
+
+    const size_t total = TRIE_FILE_HEADER_LEN + body_len;
+
+    // Atomic write: tmp file -> fsync -> rename over the live file.
+    // fopen("wb") truncates any existing tmp; the live trie.dat is
+    // untouched until the rename succeeds.
+    FILE* fileout = fopen(pathTrieTmp.string().c_str(), "wb");
+    if (!fileout) {
+        LogPrintf("WARNING: Flush: fopen(%s) failed (errno=%s)\n",
+                  pathTrieTmp.string().c_str(), std::strerror(errno));
+        free(out);
+        return false;
+    }
+    // Disable stdio buffering so fwrite writes the exact byte count
+    // via the underlying write() syscall and fflush+FileCommit covers
+    // only the real data (the default 4 KiB stdio buffer would carry
+    // uninitialised padding on a partial fill, which both inflates
+    // the file's apparent size and risks leaking heap contents to
+    // disk on a short write).
+    setvbuf(fileout, nullptr, _IONBF, 0);
+
+    bool ok = true;
+    size_t written = fwrite(out, 1, total, fileout);
+    if (written != total) {
+        LogPrintf("WARNING: Flush: fwrite wrote %zu of %zu bytes\n", written, total);
+        ok = false;
+    } else {
+        // Force stdio to flush user-space buffers, then ask the OS to
+        // durably commit to disk. FileCommit is the platform-portable
+        // helper from util.cpp (fdatasync on Linux/NetBSD,
+        // F_FULLFSYNC on macOS, FlushFileBuffers on Windows).
+        fflush(fileout);
+        FileCommit(fileout);
+    }
+    fclose(fileout);
+
+    if (!ok) {
+        free(out);
+        // Best-effort cleanup of the partial tmp file; the next Flush
+        // will overwrite it whether or not this remove succeeds.
+        try { fs::remove(pathTrieTmp); } catch (...) {}
         return false;
     }
 
-    LogPrintf("Serialized: %d bytes\n", pos);
-    fwrite(&m_bestBlock,32,1,fileout);
-    fwrite(&pos,4,1,fileout);
-    fwrite(buf,pos,1,fileout);
-    fclose(fileout);
-    free(buf);
+    // Atomic-replace trie.dat with the freshly-synced tmp file. On
+    // POSIX, rename(2) is atomic within a filesystem: the directory
+    // entry either points at the old file or the new one, never at a
+    // half-state. On Windows, boost::filesystem::rename uses
+    // MoveFileEx(..., MOVEFILE_REPLACE_EXISTING) which provides the
+    // same atomic-replace guarantee. If this fails (cross-FS link,
+    // permission denied), the tmp file is left in place and the live
+    // trie.dat is unchanged -- the daemon can retry on the next Flush.
+    try {
+        fs::rename(pathTrieTmp, pathTrie);
+    } catch (const fs::filesystem_error& e) {
+        LogPrintf("WARNING: Flush: atomic rename %s -> %s failed (%s); live trie.dat unchanged\n",
+                  pathTrieTmp.string().c_str(), pathTrie.string().c_str(),
+                  e.what());
+        try { fs::remove(pathTrieTmp); } catch (...) {}
+        free(out);
+        return false;
+    }
+
+    free(out);
     return true;
 }

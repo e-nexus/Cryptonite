@@ -249,6 +249,11 @@ boost::filesystem::path GetDefaultDataDir();
 const boost::filesystem::path &GetDataDir(bool fNetSpecific = true);
 boost::filesystem::path GetConfigFile();
 boost::filesystem::path GetPidFile();
+// Drops the cached value computed by GetDataDir() so the next call
+// re-reads mapArgs["-datadir"]. Required for tests (and any other
+// caller) that mutate the global after the daemon has booted and
+// need subsequent file-path resolution to see the new value.
+void ClearDatadirCache();
 #ifndef WIN32
 void CreatePidFile(const boost::filesystem::path &path, pid_t pid);
 #endif
