@@ -16,15 +16,12 @@
 using namespace boost::placeholders;
 
 #include <QApplication>
-#include <QCloseEvent>
-#include <QGuiApplication>
 #include <QPainter>
 
 SplashScreen::SplashScreen(Qt::WindowFlags f, bool isTestNet) :
-    QWidget(0, f), curAlignment(0)
+    QSplashScreen(QPixmap(isTestNet ? ":/images/splash_testnet" : ":/images/splash"), f),
+    curAlignment(0)
 {
-    //setAutoFillBackground(true);
-
     // set reference point, paddings
     int paddingRight            = 50;
     int paddingTop              = 60;
@@ -38,19 +35,16 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, bool isTestNet) :
     QString titleText       = tr("Cryptonite");
     QString versionText     = QString("Version %1").arg(QString::fromStdString(FormatFullVersion()));
     QString copyrightText   = QChar(0xA9)+QString(" 2009-%1 ").arg(COPYRIGHT_YEAR) + QString(tr("The Bitcoin Core developers"));
-    QString copyright2Text   = QChar(0xA9)+QString(" 2014 ") + QString(tr("The Mini-Blockchain Project"));
-    QString testnetAddText  = QString(tr("[testnet]")); // define text to place as single text object
+    QString copyright2Text  = QChar(0xA9)+QString(" 2014 ") + QString(tr("The Mini-Blockchain Project"));
+    QString testnetAddText  = QString(tr("[testnet]"));
 
     QString font            = "Open Sans";
 
-    // load the bitmap for writing some text over it
-    if(isTestNet) {
-        pixmap     = QPixmap(":/images/splash_testnet");
-    }
-    else {
-        pixmap     = QPixmap(":/images/splash");
-    }
-
+    // Paint title, version and copyright onto the splash bitmap. We take
+    // a mutable copy of the pixmap so subsequent QSplashScreen::showMessage()
+    // calls (which render via Qt's own painter on top of this pixmap) line up
+    // with the baked-in layout.
+    QPixmap pixmap = this->pixmap();
     QPainter pixPaint(&pixmap);
     pixPaint.setPen(QColor(Qt::lightGray));
 
@@ -96,17 +90,14 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, bool isTestNet) :
 
     pixPaint.end();
 
-    // Set window title
+    // Swap in the baked pixmap so QSplashScreen's own rendering uses it.
+    setPixmap(pixmap);
+
+    // Set window title (also gives the splash a title bar entry on the WM).
     if(isTestNet)
         setWindowTitle(titleText + " " + testnetAddText);
     else
         setWindowTitle(titleText);
-
-    // Resize window and move to center of desktop, disallow resizing
-    QRect r(QPoint(), pixmap.size());
-    resize(r.size());
-    setFixedSize(r.size());
-    move(QGuiApplication::primaryScreen()->geometry().center() - r.center());
 
     subscribeToCoreSignals();
 }
@@ -114,11 +105,6 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, bool isTestNet) :
 SplashScreen::~SplashScreen()
 {
     unsubscribeFromCoreSignals();
-}
-
-void SplashScreen::slotFinish(QWidget *mainWin)
-{
-    hide();
 }
 
 static void InitMessage(SplashScreen *splash, const std::string &message)
@@ -153,11 +139,14 @@ void SplashScreen::subscribeToCoreSignals()
 
 void SplashScreen::unsubscribeFromCoreSignals()
 {
-    // Disconnect signals from client
+    // Disconnect signals from client.
+    // Note: ShowProgress is connected inside ConnectWallet() on a per-wallet
+    // basis. Disconnecting it here with a freshly-bound functor would be a
+    // bind/connect mismatch that silently no-ops, so we leave wallet-scoped
+    // ShowProgress connections to the wallet itself. The splash is destroyed
+    // before any wallet operation that would invoke ShowProgress, so the
+    // connections become unreachable and are cleaned up when the wallet dies.
     uiInterface.InitMessage.disconnect(boost::bind(InitMessage, this, _1));
-#ifdef ENABLE_WALLET
-    ShowProgress.disconnect(boost::bind(ShowProgressF, this, _1, _2));
-#endif
 }
 
 void SplashScreen::showMessage(const QString &message, int alignment, const QColor &color)
@@ -165,20 +154,5 @@ void SplashScreen::showMessage(const QString &message, int alignment, const QCol
     curMessage = message;
     curAlignment = alignment;
     curColor = color;
-    update();
+    QSplashScreen::showMessage(message, alignment, color);
 }
-
-void SplashScreen::paintEvent(QPaintEvent *event)
-{
-    QPainter painter(this);
-    painter.drawPixmap(0, 0, pixmap);
-    QRect r = rect().adjusted(5, 5, -5, -5);
-    painter.setPen(curColor);
-    painter.drawText(r, curAlignment, curMessage);
-}
-
-void SplashScreen::closeEvent(QCloseEvent *event)
-{
-    event->ignore();
-}
-

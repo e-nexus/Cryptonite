@@ -7,13 +7,16 @@
 
 #include <QSplashScreen>
 
-/** Class for the splashscreen with information of the running client.
+/**
+ * Thin wrapper around QSplashScreen that paints the version / copyright text
+ * onto the splash bitmap and forwards core progress messages to it.
  *
- * This is intentionally not a QSplashScreen. Cryptonite Core initialization
- * can take a while, and in that case a progress window that cannot be
- * moved around and minimized has turned out to be frustrating to the user.
+ * QSplashScreen's stock behavior (moveable, has a close button, deletes on
+ * finish()) already covers everything the legacy hand-rolled SplashScreen
+ * class got wrong; this subclass only exists so we can render the title,
+ * version, copyright and optional [testnet] marker on top of the PNG.
  */
-class SplashScreen : public QWidget
+class SplashScreen : public QSplashScreen
 {
     Q_OBJECT
 
@@ -21,24 +24,16 @@ public:
     explicit SplashScreen(Qt::WindowFlags f, bool isTestNet);
     ~SplashScreen();
 
-protected:
-    void paintEvent(QPaintEvent *event);
-    void closeEvent(QCloseEvent *event);
-
 public Q_SLOTS:
-    /** Slot to call finish() method as it's not defined as slot */
-    void slotFinish(QWidget *mainWin);
-
     /** Show message and progress */
     void showMessage(const QString &message, int alignment, const QColor &color);
 
 private:
     /** Connect core signals to splash screen */
     void subscribeToCoreSignals();
-    /** Disconnect core signals to splash screen */
+    /** Disconnect core signals from splash screen */
     void unsubscribeFromCoreSignals();
 
-    QPixmap pixmap;
     QString curMessage;
     QColor curColor;
     int curAlignment;

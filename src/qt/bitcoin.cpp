@@ -181,7 +181,6 @@ Q_SIGNALS:
     void requestedInitialize();
     void requestedShutdown();
     void stopThread();
-    void splashFinished(QWidget *window);
 
 private:
     QThread *coreThread;
@@ -189,12 +188,16 @@ private:
     ClientModel *clientModel;
     BitcoinGUI *window;
     QTimer *pollShutdownTimer;
+    SplashScreen *splash;
 #ifdef ENABLE_WALLET
     WalletModel *walletModel;
 #endif
     int returnValue;
 
     void startThread();
+    /// Tear down the splash if one exists: finish() against the main window,
+    /// then schedule deletion for the next event-loop tick.
+    void destroySplash();
 };
 
 #include "bitcoin.moc"
@@ -255,6 +258,7 @@ BitcoinApplication::BitcoinApplication(int &argc, char **argv):
     clientModel(0),
     window(0),
     pollShutdownTimer(0),
+    splash(0),
 #ifdef ENABLE_WALLET
     walletModel(0),
 #endif
@@ -295,12 +299,28 @@ void BitcoinApplication::createWindow(bool isaTestNet)
 
 void BitcoinApplication::createSplashScreen(bool isaTestNet)
 {
-    SplashScreen *splash = new SplashScreen(0, isaTestNet);
-    // We don't hold a direct pointer to the splash screen after creation, so use
-    // Qt::WA_DeleteOnClose to make sure that the window will be deleted eventually.
-    splash->setAttribute(Qt::WA_DeleteOnClose);
+    if (splash) {
+        return; // already created; idempotent guard for safety.
+    }
+    splash = new SplashScreen(Qt::WindowStaysOnTopHint | Qt::SplashScreen, isaTestNet);
     splash->show();
-    connect(this, SIGNAL(splashFinished(QWidget*)), splash, SLOT(slotFinish(QWidget*)));
+    splash->raise();
+}
+
+void BitcoinApplication::destroySplash()
+{
+    if (!splash) {
+        return;
+    }
+    // Make sure the splash doesn't outlive its purpose. finish() makes the
+    // main window (if any) active and releases the splash's event-filter
+    // grip; deleteLater() schedules destruction on the next event-loop tick,
+    // which is safe because the splash lives on the GUI thread.
+    if (window) {
+        splash->finish(window);
+    }
+    splash->deleteLater();
+    splash = 0;
 }
 
 void BitcoinApplication::startThread()
@@ -361,7 +381,10 @@ void BitcoinApplication::initializeResult(int retval)
     returnValue = retval ? 0 : 1;
     if(retval)
     {
-        Q_EMIT splashFinished(window);
+        // Tear down the splash before showing the main window so the user
+        // sees a clean handoff (QSplashScreen::finish() also pulls the main
+        // window to the foreground).
+        destroySplash();
 
         clientModel = new ClientModel(optionsModel);
         window->setClientModel(clientModel);
@@ -385,8 +408,10 @@ void BitcoinApplication::initializeResult(int retval)
         {
             window->show();
         }
-        Q_EMIT splashFinished(window);
     } else {
+        // Initialization failed. The splash was the only visible UI and the
+        // user needs it gone before we drop into the shutdown path.
+        destroySplash();
         quit(); // Exit main loop
     }
 }
@@ -395,6 +420,12 @@ void BitcoinApplication::shutdownResult(int retval)
 {
     qDebug() << __func__ << ": Shutdown result: " << retval;
     ShutdownWindow::closeShutdownWindow();
+    // Defensive: in the error-during-init path the splash was torn down by
+    // initializeResult(); in the success path it was torn down there too.
+    // Calling destroySplash() again here is a no-op (splash is null) but
+    // keeps the contract: by the time shutdownResult fires, the splash is
+    // guaranteed gone.
+    destroySplash();
     quit(); // Exit main loop after shutdown finished
 }
 
