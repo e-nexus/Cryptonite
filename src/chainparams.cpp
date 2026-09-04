@@ -51,13 +51,20 @@ void MineGenesis(CBlock genesis){
 class CMainParams : public CChainParams {
 public:
     CMainParams() {
-        // The message start string is designed to be unlikely to occur in normal data.
-        // The characters are rarely used upper ASCII, not valid as UTF-8, and produce
-        // a large 4-byte int at any alignment.
-        pchMessageStart[0] = 0xf9;
-        pchMessageStart[1] = 0xbe;
-        pchMessageStart[2] = 0xb4;
-        pchMessageStart[3] = 0xd9;
+        // P2P network magic. Four bytes that start every packet on the wire and
+        // every on-disk address/block artefact. The first three bytes identify
+        // the family (XCN), the fourth byte identifies the network within the
+        // family: 'A' = mainnet, 'T' = testnet, 'R' = regtest. The values are
+        // chosen to be readable in tcpdump/Wireshark output and to harmonize
+        // with the trie.dat file format magic ("XCNA") defined in trieview.cpp.
+        // The historical 0xf9 0xbe 0xb4 0xd9 was byte-identical to Bitcoin Core
+        // mainnet, which made a passive Bitcoin Core node on the public internet
+        // unable to distinguish a Cryptonite peer, and made DPI-based Bitcoin
+        // censorship hit Cryptonite traffic too.
+        pchMessageStart[0] = 0x58; // 'X'
+        pchMessageStart[1] = 0x43; // 'C'
+        pchMessageStart[2] = 0x4e; // 'N'
+        pchMessageStart[3] = 0x41; // 'A'
         vAlertPubKey = ParseHex("02ffcc7129711244c97dea8e2cd63829b19c735fba8b90ce6a89040383d2c93c0e");
         nDefaultPort = 8253;
         nRPCPort = 8252;
@@ -154,13 +161,11 @@ static CMainParams mainParams;
 class CTestNetParams : public CMainParams {
 public:
     CTestNetParams() {
-        // The message start string is designed to be unlikely to occur in normal data.
-        // The characters are rarely used upper ASCII, not valid as UTF-8, and produce
-        // a large 4-byte int at any alignment.
-        pchMessageStart[0] = 0x0c;
-        pchMessageStart[1] = 0x12;
-        pchMessageStart[2] = 0x09;
-        pchMessageStart[3] = 0x07;
+        // Testnet magic: same XCN family prefix, fourth byte 'T' (0x54).
+        pchMessageStart[0] = 0x58; // 'X'
+        pchMessageStart[1] = 0x43; // 'C'
+        pchMessageStart[2] = 0x4e; // 'N'
+        pchMessageStart[3] = 0x54; // 'T'
         vAlertPubKey = ParseHex("02ffcc7129711244c97dea8e2cd63829b19c735fba8b90ce6a89040383d2c93c0e");
         nDefaultPort = 18253;
         nRPCPort = 18252;
