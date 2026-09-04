@@ -55,6 +55,14 @@ private:
     // Whether we're shutting down.
     bool fQuit;
 
+    // Sticky flag set by Loop() when it observes
+    // boost::this_thread::interruption_requested() on the worker thread.
+    // The owning thread function (ThreadScriptCheck) calls Thread() in a
+    // loop; once a worker has self-cancelled it must not re-enter Loop()
+    // on the next iteration, because the boost interrupt flag is sticky
+    // and Thread() would return true again, spinning forever.
+    bool fInterrupted;
+
     // The maximum number of elements to be processed in one batch
     unsigned int nBatchSize;
 
@@ -81,17 +89,35 @@ private:
                 }
                 // logically, the do loop starts here
                 while (queue.empty()) {
-                    if ((fMaster || fQuit) && nTodo == 0) {
-                        nTotal--;
-                        bool fRet = fAllOk;
-                        // reset the status for new work later
-                        if (fMaster)
-                            fAllOk = true;
-                        // return the current status
-                        return fRet;
+                    // Wait until work arrives, the queue is told to quit, or
+                    // this worker thread is interrupted (test fixture's
+                    // threadGroup.interrupt_all() relies on the latter so the
+                    // fixture destructor can join_all() the workers).
+                    if ((fMaster || fQuit) || boost::this_thread::interruption_requested()) {
+                        if (boost::this_thread::interruption_requested()) {
+                            fInterrupted = true;
+                            fQuit = true;
+                        }
+                        if ((fMaster || fQuit) && nTodo == 0) {
+                            nTotal--;
+                            bool fRet = fAllOk;
+                            // reset the status for new work later
+                            if (fMaster)
+                                fAllOk = true;
+                            // return the current status
+                            return fRet;
+                        }
                     }
                     nIdle++;
-                    cond.wait(lock); // wait
+                    // Use a timed wait so a worker that misses a notify can
+                    // still observe fQuit / interruption_requested() on the
+                    // next loop iteration within bounded time. boost::condition_
+                    // variable::wait() is already an interruption point so
+                    // boost::thread::interrupt() from the test fixture wakes
+                    // parked workers immediately -- the 500ms timeout is a
+                    // belt-and-braces guard against a missed notify on the
+                    // shutdown path.
+                    cond.timed_wait(lock, boost::posix_time::milliseconds(500));
                     nIdle--;
                 }
                 // Decide how many work units to process now.
@@ -121,10 +147,16 @@ private:
 public:
     // Create a new check queue
     CCheckQueue(unsigned int nBatchSizeIn) :
-        nIdle(0), nTotal(0), fAllOk(true), nTodo(0), fQuit(false), nBatchSize(nBatchSizeIn) {}
+        nIdle(0), nTotal(0), fAllOk(true), nTodo(0), fQuit(false), fInterrupted(false), nBatchSize(nBatchSizeIn) {}
 
-    // Worker thread
+    // Worker thread. Returns early if the worker has already
+    // self-cancelled via interruption_requested() -- the sticky
+    // fInterrupted flag prevents the owning thread function from
+    // re-entering Loop() in a tight spin when boost::thread::interrupt()
+    // has already been observed by an earlier iteration.
     void Thread() {
+        if (fInterrupted)
+            return;
         Loop();
     }
 
