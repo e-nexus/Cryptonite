@@ -27,7 +27,7 @@ static const int64_t nClientStartupTime = GetTime();
 
 ClientModel::ClientModel(OptionsModel *optionsModel, QObject *parent) :
     QObject(parent), optionsModel(optionsModel), peerTableModel(0),
-    cachedState({0, 0, 0, 0, false, false, false, false, 0.0}),
+    cachedState({0, 0, 0, 0, 0, false, false, false, false, 0.0}),
     nProgress(0), numBlocksAtStartup(-1), pollTimer(0)
 {
     peerTableModel = new PeerTableModel(this);
@@ -60,6 +60,18 @@ int ClientModel::getNumConnections(unsigned int flags) const
 int ClientModel::getNumHeaders() const
 {
     return chainHeaders.Height();
+}
+
+int ClientModel::getPeerMaxHeight() const
+{
+    LOCK(cs_vNodes);
+    int nMaxHeight = -1;
+    for (CNode* pnode : vNodes) {
+        if (pnode->nStartingHeight > nMaxHeight) {
+            nMaxHeight = pnode->nStartingHeight;
+        }
+    }
+    return nMaxHeight;
 }
 
 int ClientModel::getNumBlocks() const
@@ -139,6 +151,7 @@ void ClientModel::updateTimer() {
     ClientModelState newState = {
         getNumBlocks(),
         getNumHeaders(),
+        getPeerMaxHeight(),
         getTotalMissing(),
         getTrieComplete(),
         fReindex,

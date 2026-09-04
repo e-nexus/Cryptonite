@@ -42,6 +42,7 @@ class ClientModel : public QObject
 struct ClientModelState {
     int numBlocks;
     int numHeaders;
+    int peerMaxHeight;
     int totalMissing;
     int trieComplete;
     bool reindex;
@@ -62,6 +63,8 @@ public:
     int getNumConnections(unsigned int flags = CONNECTIONS_ALL) const;
     int getNumBlocks() const;
     int getNumHeaders() const;
+    //! Maximum block height advertised by any connected peer (or -1 if unknown).
+    int getPeerMaxHeight() const;
     int getTotalMissing() const;
     int getTrieComplete() const;
     int getNumBlocksAtStartup();

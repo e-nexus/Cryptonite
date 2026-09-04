@@ -680,12 +680,28 @@ void BitcoinGUI::setNumBlocks(int blocks, int headers)
         tooltip = tr("Processed %1 blocks of transaction history.").arg(blocks);
     }
 
-    //printf("Flirb %d %d %d\n", blocks,headers,secs);
+    //printf("Flirb %d %d headers\n", blocks,headers,secs);
     bool fSynced=false;
     fResyncRequired=false;
 
-    //Downloading headers
-    if(secs > 60*60*3){
+    // True "behind the network" state: we know there are headers (or blocks)
+    // we don't have yet, either because local block index is missing entries
+    // within our known header range, or because at least one connected peer
+    // advertises a chain strictly taller than ours.
+    //
+    // Note: secs > 3h alone is NOT sufficient -- a healthy local chain at
+    // consensus with a quiet (low-hashrate) network will legitimately have a
+    // tip-block timestamp far in the past. Treating that as "behind" produced
+    // a misleading "Downloading headers... N weeks behind" label while the
+    // wallet was fully caught up.
+    const int nPeerMaxHeight = clientModel->getPeerMaxHeight();
+    const int behindFromPeers = (nPeerMaxHeight > 0 && headers + 1 < nPeerMaxHeight)
+                                ? (nPeerMaxHeight - headers)
+                                : 0;
+    const int missingBlocks = clientModel->getTotalMissing();
+    const bool fBehindNetwork = (missingBlocks > 1) || (behindFromPeers > 1);
+
+    if(fBehindNetwork){
         // Represent time from last generated block in human readable text
         QString timeBehindText;
         const int HOUR_IN_SECONDS = 60*60;
@@ -710,49 +726,44 @@ void BitcoinGUI::setNumBlocks(int blocks, int headers)
             int remainder = secs % YEAR_IN_SECONDS;
             timeBehindText = tr("%1 and %2").arg(tr("%n year(s)", "", years)).arg(tr("%n week(s)","", remainder/WEEK_IN_SECONDS));
         }
-	int estBlocks = headers + secs/60;
+        // Use the real peer-vs-local gap as the bar's denominator instead of
+        // a synthetic "headers + secs/60". When the gap is unknown (zero
+        // peers), fall back to MIN_HISTORY so the bar renders sensibly.
+        // MIN_HISTORY is uint64_t; cast both operands to int64_t so the
+        // std::max overload picks a single type.
+        const int64_t behindMax = max<int64_t>(behindFromPeers, missingBlocks);
+        const int64_t barMax = max<int64_t>((int64_t)MIN_HISTORY, behindMax);
 
-	progressBarLabel->setText(tr("Downloading headers..."));
+        progressBarLabel->setText(tr("Synchronizing with network..."));
         progressBar->setFormat(tr("%1 behind").arg(timeBehindText));
-        progressBar->setMaximum(estBlocks);
-        progressBar->setValue(headers);
+        progressBar->setMaximum(barMax);
+        // Value advances with how many we've already ingested; show progress
+        // out of barMax so a fully-caught-up state would read 100%.
+        const int64_t behindRemaining = max<int64_t>(behindMax, (int64_t)0);
+        progressBar->setValue(max<int64_t>((int64_t)0, barMax - behindRemaining));
 
-        tooltip = tr("Downloading headers...") + QString("<br>") + tooltip;
+        tooltip = tr("Synchronizing with network...") + QString("<br>") + tooltip;
 
         tooltip += QString("<br>");
         tooltip += tr("Last received block was generated %1 ago.").arg(timeBehindText);
         tooltip += QString("<br>");
         tooltip += tr("Transactions after this will not yet be visible.");
 
-	qApp->processEvents();
-    //TODO: this is different if trie online or no
-    }else if(clientModel->getTotalMissing()>1){ //Not enough block downloaded yet
-        int behind = clientModel->getTotalMissing();
-
-        tooltip = tr("Downloading blocks...") + QString("<br>") + tooltip;
-	progressBarLabel->setText(tr("Downloading blocks..."));
-	if(clientModel->getNeedsResync()){
-            progressBar->setFormat(tr("%1 behind - May need resync - Click to resync").arg(behind));
-            fResyncRequired = true;
-	}else
-            progressBar->setFormat(tr("%1 behind").arg(behind));
-        progressBar->setMaximum(MIN_HISTORY);
-        progressBar->setValue(max((int64_t)0LL,(int64_t)MIN_HISTORY-(int64_t)behind));
-
-        tooltip = tr("Catching up...") + QString("<br>") + tooltip;
+        qApp->processEvents();
+        //TODO: this is different if trie online or no
     }else if(clientModel->getValidating()){
         tooltip = tr("Validating blocks...") + QString("<br>") + tooltip;
-	progressBarLabel->setText(tr("Validating blocks..."));
+        progressBarLabel->setText(tr("Validating blocks..."));
 
         progressBar->setFormat(tr("%1% done").arg(clientModel->nProgress));
         progressBar->setMaximum(100);
         progressBar->setValue(clientModel->nProgress);
 
     }else if(!clientModel->getTrieOnline()){
-	int complete=clientModel->getTrieComplete();
+        int complete=clientModel->getTrieComplete();
 
         tooltip = tr("Downloading trie...") + QString("<br>") + tooltip;
-	progressBarLabel->setText(tr("Downloading trie..."));
+        progressBarLabel->setText(tr("Downloading trie..."));
         progressBar->setFormat(tr("%1% done").arg(round((complete * 100.0) / 256.0)));
         progressBar->setMaximum(256);
         progressBar->setValue(complete);
