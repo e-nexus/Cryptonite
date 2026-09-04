@@ -200,6 +200,33 @@ public:
 };
 static CTestNetParams testNetParams;
 
+//
+// Regression test mode. Used by the functional test suite and by
+// developers who want a private network where blocks can be found
+// instantly. Inherits the testnet base58 prefixes (matches Bitcoin
+// Core's regtest convention) and replaces only the network magic and
+// the default ports. The historical -regtest code path
+// (SelectParamsFromCommandLine) hit an assert(false) in SelectParams;
+// this constructor closes that gap.
+//
+class CRegTestParams : public CTestNetParams {
+public:
+    CRegTestParams() {
+        // Regtest magic: same XCN family prefix, fourth byte 'R' (0x52).
+        pchMessageStart[0] = 0x58; // 'X'
+        pchMessageStart[1] = 0x43; // 'C'
+        pchMessageStart[2] = 0x4e; // 'N'
+        pchMessageStart[3] = 0x52; // 'R'
+        nDefaultPort = 18253;
+        nRPCPort = 18252;
+        strDataDir = "regtest";
+        vFixedSeeds.clear();
+        vSeeds.clear();
+    }
+    virtual Network NetworkID() const { return CChainParams::REGTEST; }
+};
+static CRegTestParams regTestParams;
+
 static CChainParams *pCurrentParams = &mainParams;
 
 const CChainParams &Params() {
@@ -214,6 +241,9 @@ void SelectParams(CChainParams::Network network) {
         case CChainParams::TESTNET:
             pCurrentParams = &testNetParams;
             break;
+        case CChainParams::REGTEST:
+            pCurrentParams = &regTestParams;
+            break;
         default:
             assert(false && "Unimplemented network");
             return;
@@ -222,8 +252,15 @@ void SelectParams(CChainParams::Network network) {
 
 bool SelectParamsFromCommandLine() {
     bool fTestNet = GetBoolArg("-testnet", false);
+    bool fRegTest = GetBoolArg("-regtest", false);
 
-    if (fTestNet) {
+    if (fTestNet && fRegTest) {
+        return false;
+    }
+
+    if (fRegTest) {
+        SelectParams(CChainParams::REGTEST);
+    } else if (fTestNet) {
         SelectParams(CChainParams::TESTNET);
     } else {
         SelectParams(CChainParams::MAIN);
