@@ -116,6 +116,8 @@ void HelpMessageDialog::on_okButton_accepted()
 
 
 /** "Shutdown" window */
+QWidget *ShutdownWindow::shutdownWindow = nullptr;
+
 ShutdownWindow::ShutdownWindow(QWidget *parent, Qt::WindowFlags f):
     QWidget(parent, f)
 {
@@ -142,6 +144,18 @@ void ShutdownWindow::showShutdownWindow(BitcoinGUI *window)
     const QPoint global = window->mapToGlobal(window->rect().center());
     shutdownWindow->move(global.x() - shutdownWindow->width() / 2, global.y() - shutdownWindow->height() / 2);
     shutdownWindow->show();
+
+    ShutdownWindow::shutdownWindow = shutdownWindow;
+}
+
+void ShutdownWindow::closeShutdownWindow()
+{
+    if (shutdownWindow) {
+        // deleteLater() bypasses closeEvent (which ignores close requests to keep
+        // the window visible until shutdown is genuinely complete).
+        shutdownWindow->deleteLater();
+        shutdownWindow = nullptr;
+    }
 }
 
 void ShutdownWindow::closeEvent(QCloseEvent *event)

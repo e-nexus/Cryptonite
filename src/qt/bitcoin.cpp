@@ -394,6 +394,7 @@ void BitcoinApplication::initializeResult(int retval)
 void BitcoinApplication::shutdownResult(int retval)
 {
     qDebug() << __func__ << ": Shutdown result: " << retval;
+    ShutdownWindow::closeShutdownWindow();
     quit(); // Exit main loop after shutdown finished
 }
 

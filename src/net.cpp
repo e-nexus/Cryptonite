@@ -13,6 +13,7 @@
 #include "addrman.h"
 #include "chainparams.h"
 #include "core.h"
+#include "init.h"
 #include "scheduler.h"
 #include "ui_interface.h"
 
@@ -1210,6 +1211,10 @@ void ThreadDNSAddressSeed()
     LogPrintf("Loading addresses from DNS seeds (could take a while)\n");
 
     for (const CDNSSeedData &seed : vSeeds) {
+        // Cooperative shutdown: getaddrinfo() is a blocking libc call that
+        // does not honour boost::thread::interrupt, so without this check the
+        // DNS seed thread can keep join_all() waiting forever at shutdown.
+        if (ShutdownRequested()) return;
         if (HaveNameProxy()) {
             AddOneShot(seed.host);
         } else {
