@@ -53,6 +53,7 @@ test_cryptonite_SOURCES = \
   Checkpoints_tests.cpp \
   compress_tests.cpp \
   getarg_tests.cpp \
+  magic_tests.cpp \
   main_tests.cpp \
   mruset_tests.cpp \
   netbase_tests.cpp \
