@@ -149,8 +149,6 @@ public Q_SLOTS:
     */
     void setEncryptionStatus(int status);
 
-    bool handlePaymentRequest(const SendCoinsRecipient& recipient);
-
     /** Show incoming transaction notification for new transactions. */
     void incomingTransaction(const QString& date, int unit, qint64 amount, const QString& type, const QString& address);
 #endif

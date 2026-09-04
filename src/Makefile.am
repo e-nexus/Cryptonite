@@ -20,8 +20,11 @@ if BUILD_BITCOIN_CLI
   bin_PROGRAMS += cryptonite-cli
 endif
 
-SUBDIRS = . $(BUILD_QT) $(BUILD_TEST)
-DIST_SUBDIRS = . test
+SUBDIRS = . $(BUILD_TEST)
+DIST_SUBDIRS = . qt test
+if BUILD_QT
+SUBDIRS += qt
+endif
 .PHONY: FORCE
 # bitcoin core #
 BITCOIN_CORE_H = \

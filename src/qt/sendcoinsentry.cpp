@@ -32,8 +32,6 @@ SendCoinsEntry::SendCoinsEntry(QWidget *parent) :
 
     // normal bitcoin address field
     GUIUtil::setupAddressWidget(ui->payTo, this);
-    // just a label for displaying bitcoin address(es)
-    ui->payTo_is->setFont(GUIUtil::bitcoinAddressFont());
 }
 
 SendCoinsEntry::~SendCoinsEntry()
@@ -74,26 +72,16 @@ void SendCoinsEntry::setModel(WalletModel *model)
 
     connect(ui->payAmount, SIGNAL(textChanged()), this, SIGNAL(payAmountChanged()));
     connect(ui->deleteButton, SIGNAL(clicked()), this, SLOT(deleteClicked()));
-    connect(ui->deleteButton_is, SIGNAL(clicked()), this, SLOT(deleteClicked()));
-    connect(ui->deleteButton_s, SIGNAL(clicked()), this, SLOT(deleteClicked()));
 
     clear();
 }
 
 void SendCoinsEntry::clear()
 {
-    // clear UI elements for normal payment
+    // clear UI elements
     ui->payTo->clear();
     ui->addAsLabel->clear();
     ui->payAmount->clear();
-    // clear UI elements for insecure payment request
-    ui->payTo_is->clear();
-    ui->memoTextLabel_is->clear();
-    ui->payAmount_is->clear();
-    // clear UI elements for secure payment request
-    ui->payTo_s->clear();
-    ui->memoTextLabel_s->clear();
-    ui->payAmount_s->clear();
 
     // update the display unit, to not use the default ("BTC")
     updateDisplayUnit();
@@ -111,10 +99,6 @@ bool SendCoinsEntry::validate()
 
     // Check input validity
     bool retval = true;
-
-    // Skip checks for payment request
-    if (recipient.paymentRequest.IsInitialized())
-        return retval;
 
     if (!model->validateAddress(ui->payTo->text()))
     {
@@ -138,10 +122,6 @@ bool SendCoinsEntry::validate()
 
 SendCoinsRecipient SendCoinsEntry::getValue()
 {
-    // Payment request
-    if (recipient.paymentRequest.IsInitialized())
-        return recipient;
-
     // Normal payment
     recipient.address = ui->payTo->text();
     recipient.label = ui->addAsLabel->text();
@@ -165,31 +145,11 @@ void SendCoinsEntry::setValue(const SendCoinsRecipient &value)
 {
     recipient = value;
 
-    if (recipient.paymentRequest.IsInitialized()) // payment request
-    {
-        if (recipient.authenticatedMerchant.isEmpty()) // insecure
-        {
-            ui->payTo_is->setText(recipient.address);
-            ui->payAmount_is->setValue(recipient.amount);
-            ui->payAmount_is->setReadOnly(true);
-            setCurrentWidget(ui->SendCoins_InsecurePaymentRequest);
-        }
-        else // secure
-        {
-            ui->payTo_s->setText(recipient.authenticatedMerchant);
-            ui->payAmount_s->setValue(recipient.amount);
-            ui->payAmount_s->setReadOnly(true);
-            setCurrentWidget(ui->SendCoins_SecurePaymentRequest);
-        }
-    }
-    else // normal payment
-    {
-        ui->addAsLabel->clear();
-        ui->payTo->setText(recipient.address); // this may set a label from addressbook
-        if (!recipient.label.isEmpty()) // if a label had been set from the addressbook, dont overwrite with an empty label
-            ui->addAsLabel->setText(recipient.label);
-        ui->payAmount->setValue(recipient.amount);
-    }
+    ui->addAsLabel->clear();
+    ui->payTo->setText(recipient.address); // this may set a label from addressbook
+    if (!recipient.label.isEmpty()) // if a label had been set from the addressbook, dont overwrite with an empty label
+        ui->addAsLabel->setText(recipient.label);
+    ui->payAmount->setValue(recipient.amount);
 }
 
 void SendCoinsEntry::setAddress(const QString &address)
@@ -200,7 +160,7 @@ void SendCoinsEntry::setAddress(const QString &address)
 
 bool SendCoinsEntry::isClear()
 {
-    return ui->payTo->text().isEmpty() && ui->payTo_is->text().isEmpty() && ui->payTo_s->text().isEmpty();
+    return ui->payTo->text().isEmpty();
 }
 
 void SendCoinsEntry::setFocus()
@@ -214,8 +174,6 @@ void SendCoinsEntry::updateDisplayUnit()
     {
         // Update payAmount with the current unit
         ui->payAmount->setDisplayUnit(model->getOptionsModel()->getDisplayUnit());
-        ui->payAmount_is->setDisplayUnit(model->getOptionsModel()->getDisplayUnit());
-        ui->payAmount_s->setDisplayUnit(model->getOptionsModel()->getDisplayUnit());
     }
 }
 

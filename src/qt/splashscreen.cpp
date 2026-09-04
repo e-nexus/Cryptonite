@@ -17,7 +17,7 @@ using namespace boost::placeholders;
 
 #include <QApplication>
 #include <QCloseEvent>
-#include <QDesktopWidget>
+#include <QGuiApplication>
 #include <QPainter>
 
 SplashScreen::SplashScreen(Qt::WindowFlags f, bool isTestNet) :
@@ -57,7 +57,7 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, bool isTestNet) :
     // check font size and drawing with
     pixPaint.setFont(QFont(font, 33*fontFactor));
     QFontMetrics fm = pixPaint.fontMetrics();
-    int titleTextWidth  = fm.width(titleText);
+    int titleTextWidth  = fm.horizontalAdvance(titleText);
     if(titleTextWidth > 160) {
         // strange font rendering, Arial probably not found
         fontFactor = 0.75;
@@ -65,14 +65,14 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, bool isTestNet) :
 
     pixPaint.setFont(QFont(font, 33*fontFactor));
     fm = pixPaint.fontMetrics();
-    titleTextWidth  = fm.width(titleText);
+    titleTextWidth  = fm.horizontalAdvance(titleText);
     pixPaint.drawText(pixmap.width()-titleTextWidth-paddingRight,paddingTop,titleText);
 
     pixPaint.setFont(QFont(font, 15*fontFactor));
 
     // if the version string is to long, reduce size
     fm = pixPaint.fontMetrics();
-    int versionTextWidth  = fm.width(versionText);
+    int versionTextWidth  = fm.horizontalAdvance(versionText);
     if(versionTextWidth > titleTextWidth+paddingRight-10) {
         pixPaint.setFont(QFont(font, 10*fontFactor));
         titleVersionVSpace -= 5;
@@ -90,7 +90,7 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, bool isTestNet) :
         boldFont.setWeight(QFont::Bold);
         pixPaint.setFont(boldFont);
         fm = pixPaint.fontMetrics();
-        int testnetAddTextWidth  = fm.width(testnetAddText);
+        int testnetAddTextWidth  = fm.horizontalAdvance(testnetAddText);
         pixPaint.drawText(pixmap.width()-testnetAddTextWidth-10,15,testnetAddText);
     }
 
@@ -106,7 +106,7 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, bool isTestNet) :
     QRect r(QPoint(), pixmap.size());
     resize(r.size());
     setFixedSize(r.size());
-    move(QApplication::desktop()->screenGeometry().center() - r.center());
+    move(QGuiApplication::primaryScreen()->geometry().center() - r.center());
 
     subscribeToCoreSignals();
 }

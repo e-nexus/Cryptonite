@@ -17,7 +17,7 @@
 #include "utilitydialog.h"
 
 #ifdef ENABLE_WALLET
-#include "paymentserver.h"
+
 #include "walletmodel.h"
 #endif
 
@@ -55,9 +55,6 @@ Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 Q_IMPORT_PLUGIN(QXcbIntegrationPlugin);
 #endif
 
-// Declare meta types used for QMetaObject::invokeMethod
-Q_DECLARE_METATYPE(bool*)
-
 static void InitMessage(const std::string &message)
 {
     LogPrintf("init message: %s\n", message);
@@ -68,7 +65,7 @@ static void InitMessage(const std::string &message)
  */
 static std::string Translate(const char* psz)
 {
-    return QCoreApplication::translate("bitcoin-core", psz).toStdString();
+    return QCoreApplication::translate("cryptonite-core", psz).toStdString();
 }
 
 /** Set up translations */
@@ -159,10 +156,6 @@ public:
     explicit BitcoinApplication(int &argc, char **argv);
     ~BitcoinApplication();
 
-#ifdef ENABLE_WALLET
-    /// Create payment server
-    void createPaymentServer();
-#endif
     /// Create options model
     void createOptionsModel();
     /// Create main window
@@ -197,7 +190,6 @@ private:
     BitcoinGUI *window;
     QTimer *pollShutdownTimer;
 #ifdef ENABLE_WALLET
-    PaymentServer* paymentServer;
     WalletModel *walletModel;
 #endif
     int returnValue;
@@ -264,7 +256,6 @@ BitcoinApplication::BitcoinApplication(int &argc, char **argv):
     window(0),
     pollShutdownTimer(0),
 #ifdef ENABLE_WALLET
-    paymentServer(0),
     walletModel(0),
 #endif
     returnValue(0)
@@ -284,20 +275,9 @@ BitcoinApplication::~BitcoinApplication()
 
     delete window;
     window = 0;
-#ifdef ENABLE_WALLET
-    delete paymentServer;
-    paymentServer = 0;
-#endif
     delete optionsModel;
     optionsModel = 0;
 }
-
-#ifdef ENABLE_WALLET
-void BitcoinApplication::createPaymentServer()
-{
-    paymentServer = new PaymentServer(this);
-}
-#endif
 
 void BitcoinApplication::createOptionsModel()
 {
@@ -381,11 +361,6 @@ void BitcoinApplication::initializeResult(int retval)
     returnValue = retval ? 0 : 1;
     if(retval)
     {
-#ifdef ENABLE_WALLET
-        PaymentServer::LoadRootCAs();
-        paymentServer->setOptionsModel(optionsModel);
-#endif
-
         Q_EMIT splashFinished(window);
 
         clientModel = new ClientModel(optionsModel);
@@ -398,9 +373,6 @@ void BitcoinApplication::initializeResult(int retval)
 
             window->addWallet("~Default", walletModel);
             window->setCurrentWallet("~Default");
-
-            connect(walletModel, SIGNAL(coinsSent(CWallet*,SendCoinsRecipient,QByteArray)),
-                             paymentServer, SLOT(fetchPaymentACK(CWallet*,const SendCoinsRecipient&,QByteArray)));
         }
 #endif
 
@@ -414,18 +386,6 @@ void BitcoinApplication::initializeResult(int retval)
             window->show();
         }
         Q_EMIT splashFinished(window);
-
-#ifdef ENABLE_WALLET
-        // Now that initialization/startup is done, process any command-line
-        // bitcoin: URIs or payment requests:
-        connect(paymentServer, SIGNAL(receivedPaymentRequest(SendCoinsRecipient)),
-                         window, SLOT(handlePaymentRequest(SendCoinsRecipient)));
-        connect(window, SIGNAL(receivedURI(QString)),
-                         paymentServer, SLOT(handleURIOrFile(QString)));
-        connect(paymentServer, SIGNAL(message(QString,QString,unsigned int)),
-                         window, SLOT(message(QString,QString,unsigned int)));
-        QTimer::singleShot(100, paymentServer, SLOT(uiReady()));
-#endif
     } else {
         quit(); // Exit main loop
     }
@@ -454,7 +414,6 @@ int main(int argc, char *argv[])
 
     // Enable high-dpi features
     QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
-    QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 
     #ifdef Q_OS_MAC
         QApplication::setAttribute(Qt::AA_DontShowIconsInMenus);
@@ -463,9 +422,6 @@ int main(int argc, char *argv[])
     /// 2. Basic Qt initialization (not dependent on parameters or configuration)
     Q_INIT_RESOURCE(bitcoin);
     BitcoinApplication app(argc, argv);
-
-    // Register meta types used for QMetaObject::invokeMethod
-    qRegisterMetaType< bool* >();
 
     /// 3. Application identification
     // must be set before OptionsModel is initialized or translations are loaded,
@@ -520,11 +476,6 @@ int main(int argc, char *argv[])
         QMessageBox::critical(0, QObject::tr("Cryptonite"), QObject::tr("Error: Invalid combination of -regtest and -testnet."));
         return 1;
     }
-#ifdef ENABLE_WALLET
-    // Parse URIs on command line -- this can affect Params()
-    if (!PaymentServer::ipcParseCommandLine(argc, argv))
-        exit(0);
-#endif
     bool isaTestNet = Params().NetworkID() != CChainParams::MAIN;
     // Allow for separate UI settings for testnets
     if (isaTestNet)
@@ -533,21 +484,6 @@ int main(int argc, char *argv[])
         QApplication::setApplicationName(QAPP_APP_NAME_DEFAULT);
     // Re-initialize translations after changing application name (language in network-specific settings can be different)
     initTranslations(qtTranslatorBase, qtTranslator, translatorBase, translator);
-
-#ifdef ENABLE_WALLET
-    /// 8. URI IPC sending
-    // - Do this early as we don't want to bother initializing if we are just calling IPC
-    // - Do this *after* setting up the data directory, as the data directory hash is used in the name
-    // of the server.
-    // - Do this after creating app and setting up translations, so errors are
-    // translated properly.
-    if (PaymentServer::ipcSendCommandLine())
-        exit(0);
-
-    // Start up the payment server early, too, so impatient users that click on
-    // bitcoin: links repeatedly have their payment requests routed to this process:
-    app.createPaymentServer();
-#endif
 
     /// 9. Main GUI initialization
 

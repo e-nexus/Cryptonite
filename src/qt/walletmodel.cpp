@@ -174,45 +174,21 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
     // Pre-check input data for validity
     for (const SendCoinsRecipient &rcp : recipients)
     {
-        if (rcp.paymentRequest.IsInitialized())
-        {   // PaymentRequest...
-            int64_t subtotal = 0;
-            const payments::PaymentDetails& details = rcp.paymentRequest.getDetails();
-            for (int i = 0; i < details.outputs_size(); i++)
-            {
-                const payments::Output& out = details.outputs(i);
-                if (out.amount() <= 0) continue;
-                subtotal += out.amount();
-
-                const unsigned char* key = (const unsigned char*)out.key().data();
-		uint160 k;
-		memcpy(k.begin(),key,20);
-                mapSend[k] = out.amount();
-            }
-            if (subtotal <= 0)
-            {
-                return InvalidAmount;
-            }
-            total += subtotal;
+        if(!validateAddress(rcp.address))
+        {
+            return InvalidAddress;
         }
-        else
-        {   // User-entered bitcoin address / amount:
-            if(!validateAddress(rcp.address))
-            {
-                return InvalidAddress;
-            }
-            if(rcp.amount <= 0)
-            {
-                return InvalidAmount;
-            }
-            setAddress.insert(rcp.address);
-            ++nAddresses;
-
-            CKeyID id = boost::get<CKeyID>(CBitcoinAddress(rcp.address.toStdString()).Get());
-            mapSend[id] = rcp.amount;
-
-            total += rcp.amount;
+        if(rcp.amount <= 0)
+        {
+            return InvalidAmount;
         }
+        setAddress.insert(rcp.address);
+        ++nAddresses;
+
+        CKeyID id = boost::get<CKeyID>(CBitcoinAddress(rcp.address.toStdString()).Get());
+        mapSend[id] = rcp.amount;
+
+        total += rcp.amount;
     }
 
     if(setAddress.size() != nAddresses)
@@ -266,18 +242,6 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(WalletModelTransaction &tran
         LOCK2(cs_main, wallet->cs_wallet);
         CWalletTx *newTx = transaction.getTransaction();
 
-        // Store PaymentRequests in wtx.vOrderForm in wallet.
-        for (const SendCoinsRecipient &rcp : transaction.getRecipients())
-        {
-            if (rcp.paymentRequest.IsInitialized())
-            {
-                std::string key("PaymentRequest");
-                std::string value;
-                rcp.paymentRequest.SerializeToString(&value);
-                newTx->vOrderForm.push_back(make_pair(key, value));
-            }
-        }
-
 	std::string strFailReason;
         if(!wallet->CommitTransaction(*newTx, strFailReason))
             return TransactionCommitFailed;
@@ -292,26 +256,22 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(WalletModelTransaction &tran
     // and emit coinsSent signal for each recipient
     for (const SendCoinsRecipient &rcp : transaction.getRecipients())
     {
-        // Don't touch the address book when we have a payment request
-        if (!rcp.paymentRequest.IsInitialized())
+        std::string strAddress = rcp.address.toStdString();
+        CTxDestination dest = CBitcoinAddress(strAddress).Get();
+        std::string strLabel = rcp.label.toStdString();
         {
-            std::string strAddress = rcp.address.toStdString();
-            CTxDestination dest = CBitcoinAddress(strAddress).Get();
-            std::string strLabel = rcp.label.toStdString();
+            LOCK(wallet->cs_wallet);
+
+            std::map<CTxDestination, CAddressBookData>::iterator mi = wallet->mapAddressBook.find(dest);
+
+            // Check if we have a new address or an updated label
+            if (mi == wallet->mapAddressBook.end())
             {
-                LOCK(wallet->cs_wallet);
-
-                std::map<CTxDestination, CAddressBookData>::iterator mi = wallet->mapAddressBook.find(dest);
-
-                // Check if we have a new address or an updated label
-                if (mi == wallet->mapAddressBook.end())
-                {
-                    wallet->SetAddressBook(dest, strLabel, "send");
-                }
-                else if (mi->second.name != strLabel)
-                {
-                    wallet->SetAddressBook(dest, strLabel, ""); // "" means don't change purpose
-                }
+                wallet->SetAddressBook(dest, strLabel, "send");
+            }
+            else if (mi->second.name != strLabel)
+            {
+                wallet->SetAddressBook(dest, strLabel, ""); // "" means don't change purpose
             }
         }
         //Q_EMIT coinsSent(wallet, rcp, transaction_array);

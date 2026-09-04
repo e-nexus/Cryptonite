@@ -28,7 +28,7 @@ public:
     (
         RecentRequestEntry* pthis = const_cast<RecentRequestEntry*>(this);
 
-        unsigned int nDate = date.toTime_t();
+        qint64 nDate = date.toSecsSinceEpoch();
 
         READWRITE(pthis->nVersion);
         nVersion = pthis->nVersion;
@@ -37,7 +37,7 @@ public:
         READWRITE(recipient);
 
         if (fRead)
-            pthis->date = QDateTime::fromTime_t(nDate);
+            pthis->date = QDateTime::fromSecsSinceEpoch(nDate);
     )
 };
 

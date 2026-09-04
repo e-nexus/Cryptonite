@@ -30,8 +30,8 @@
 
 #include <boost/bind/placeholders.hpp>
 #include <QApplication>
+#include <QActionGroup>
 #include <QDateTime>
-#include <QDesktopWidget>
 #include <QDragEnterEvent>
 #include <QIcon>
 #include <QLabel>
@@ -956,19 +956,6 @@ bool BitcoinGUI::eventFilter(QObject *object, QEvent *event)
 }
 
 #ifdef ENABLE_WALLET
-bool BitcoinGUI::handlePaymentRequest(const SendCoinsRecipient& recipient)
-{
-    // URI has to be valid
-    if (walletFrame && walletFrame->handlePaymentRequest(recipient))
-    {
-        showNormalIfMinimized();
-        gotoSendCoinsPage();
-        return true;
-    }
-    else
-        return false;
-}
-
 void BitcoinGUI::setEncryptionStatus(int status)
 {
     switch(status)

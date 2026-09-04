@@ -100,8 +100,8 @@ public:
     bool inWallet = mi != wallet->mapWallet.end();
     bool showTransaction = (inWallet && TransactionRecord::showTransaction(mi->second));
 
-    auto lower = qLowerBound(cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
-    auto upper = qUpperBound(cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
+    auto lower = std::lower_bound(cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
+    auto upper = std::upper_bound(cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
     bool inModel = (lower != upper);
 
     if(status == CT_UPDATED && showTransaction == inModel)
@@ -555,7 +555,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
     case TypeRole:
         return rec->type;
     case DateRole:
-        return QDateTime::fromTime_t(static_cast<uint>(rec->time));
+        return QDateTime::fromSecsSinceEpoch(static_cast<qint64>(rec->time));
     case LongDescriptionRole:
         return priv->describe(rec, walletModel->getOptionsModel()->getDisplayUnit());
     case AddressRole:

@@ -232,7 +232,7 @@ void ReceiveCoinsDialog::copyColumnToClipboard(int column)
         return;
     // correct for selection mode ContiguousSelection
     QModelIndex firstIndex = selection.at(0);
-    GUIUtil::setClipboard(model->getRecentRequestsTableModel()->data(firstIndex.child(firstIndex.row(), column), Qt::EditRole).toString());
+    GUIUtil::setClipboard(model->getRecentRequestsTableModel()->data(firstIndex.model()->index(firstIndex.row(), column, firstIndex), Qt::EditRole).toString());
 }
 
 // context menu

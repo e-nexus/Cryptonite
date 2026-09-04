@@ -5,6 +5,7 @@ src/cryptonite
 src/cryptonited
 src/cryptonite-cli
 src/test/test_cryptonite
+src/qt/cryptonite-qt
 src/qt/test/test_cryptonite-qt
 
 Makefile.in

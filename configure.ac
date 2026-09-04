@@ -140,8 +140,6 @@ AC_ARG_ENABLE([lcov],
   [use_lcov=yes],
   [use_lcov=no])
 
-AC_ARG_WITH([protoc-bindir],[AS_HELP_STRING([--with-protoc-bindir=BIN_DIR],[specify protoc bin path])], [protoc_bin_path=$withval], [])
-
 
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_HEADERS([src/cryptonite-config.h])
@@ -562,8 +560,6 @@ AC_ARG_WITH([daemon],
   [build_bitcoind=$withval],
   [build_bitcoind=yes])
 
-BITCOIN_QT_INIT
-
 if test x$use_pkgconfig = xyes; then
 
   if test x$PKG_CONFIG == x; then
@@ -576,7 +572,6 @@ if test x$use_pkgconfig = xyes; then
     [
       PKG_CHECK_MODULES([SSL], [libssl], [INCLUDES="$INCLUDES $SSL_CFLAGS"; LIBS="$LIBS $SSL_LIBS"], [AC_MSG_ERROR(openssl  not found.)])
       PKG_CHECK_MODULES([CRYPTO], [libcrypto], [INCLUDES="$INCLUDES $CRYPTO_CFLAGS"; LIBS="$LIBS $CRYPTO_LIBS"], [AC_MSG_ERROR(libcrypto  not found.)])
-      dnl Qt/PROTOBUF/QR detection is intentionally skipped — the GUI build is disabled.
     ]
   )
 else
@@ -585,11 +580,7 @@ else
 
   AC_CHECK_HEADER([openssl/ssl.h],, AC_MSG_ERROR(libssl headers missing),)
   AC_CHECK_LIB([ssl],         [main],, AC_MSG_ERROR(libssl missing))
-
-  dnl Qt/PROTOBUF/QR detection is intentionally skipped — the GUI build is disabled.
 fi
-
-dnl BITCOIN_QT_PATH_PROGS intentionally skipped — the GUI build is disabled.
 
 AC_MSG_CHECKING([whether to build bitcoind])
 AM_CONDITIONAL([BUILD_BITCOIND], [test x$build_bitcoind = xyes])
@@ -599,16 +590,21 @@ AC_MSG_CHECKING([whether to build bitcoin-cli])
 AM_CONDITIONAL([BUILD_BITCOIN_CLI], [test x$build_bitcoin_cli = xyes])
 AC_MSG_RESULT($build_bitcoin_cli)
 
-dnl Qt4 detection removed — Qt4 is unsupported on modern toolchains.
-dnl The Qt build is disabled by default; passing --with-qt will be a no-op until
-dnl the Qt sources are ported to Qt5. Skipping here prevents BITCOIN_QT_CONFIGURE
-dnl from invoking qmake probes that hard-error on missing Qt4 headers.
-bitcoin_enable_qt=no
-bitcoin_enable_qt_test=no
-bitcoin_enable_qt_dbus=no
-if test x$with_qt != xno; then
-  AC_MSG_WARN([Qt GUI is disabled: the codebase targets Qt4 APIs which are unsupported on modern toolchains. Re-enable by replacing BITCOIN_QT_CONFIGURE with a Qt5-capable macro and porting src/qt/ to Qt5.])
-fi
+dnl ---------------------------------------------------------------------
+dnl Qt 6 GUI
+dnl
+dnl --with-gui (default yes) triggers pkg-config detection of Qt6Core,
+dnl Qt6Gui, Qt6Widgets and Qt6Network. --without-gui skips all detection
+dnl and leaves the src/qt/ subdir out of the build (the daemon and CLI
+dnl still build normally).
+dnl ---------------------------------------------------------------------
+AC_ARG_WITH([gui],
+  [AS_HELP_STRING([--with-gui],
+  [with GUI (default is yes if Qt6 is found via pkg-config)])],
+  [with_qt=$withval],
+  [with_qt=yes])
+
+BITCOIN_QT_INIT
 
 if test x$use_ipv6 = xyes; then
   dnl Check for ipv6 build requirements
@@ -705,13 +701,19 @@ if test x$bitcoin_enable_qt != xno; then
   BUILD_QT=qt
   dnl enable dbus support
   AC_MSG_CHECKING([whether to build GUI with support for D-Bus])
-  if test x$bitcoin_enable_qt_dbus != xno; then
+  if test x"$QT_DBUS_LIBS" != x; then
     AC_DEFINE([USE_DBUS],[1],[Define if dbus support should be compiled in])
+    AC_MSG_RESULT(yes)
+  else
+    AC_MSG_RESULT(no)
   fi
-  AC_MSG_RESULT($bitcoin_enable_qt_dbus)
 
   dnl enable qr support
   AC_MSG_CHECKING([whether to build GUI with support for QR codes])
+  m4_ifdef(
+    [PKG_CHECK_MODULES],
+    [PKG_CHECK_MODULES([QRENCODE], [libqrencode], [have_qrencode=yes], [have_qrencode=no])]
+  )
   if test x$have_qrencode = xno; then
     if test x$use_qr == xyes; then
      AC_MSG_ERROR("QR support requested but cannot be built. use --without-qrencode")
@@ -731,7 +733,7 @@ if test x$bitcoin_enable_qt != xno; then
     AC_MSG_WARN("xgettext is required to update qt translations")
   fi
 
-  AC_MSG_CHECKING([whether to build test_bitcoin-qt])
+  AC_MSG_CHECKING([whether to build test_cryptonite-qt])
   if test x$use_tests$bitcoin_enable_qt_test = xyesyes; then
     AC_MSG_RESULT([yes])
     BUILD_TEST_QT="test"
@@ -777,6 +779,7 @@ AC_SUBST(COPYRIGHT_YEAR, _COPYRIGHT_YEAR)
 
 AC_SUBST(USE_UPNP)
 AC_SUBST(USE_QRCODE)
+AC_SUBST(QRENCODE_LIBS)
 AC_SUBST(USE_IPV6)
 AC_SUBST(INCLUDES)
 AC_SUBST(BOOST_LIBS)
@@ -785,7 +788,7 @@ AC_SUBST(LEVELDB_TARGET_FLAGS)
 AC_SUBST(BUILD_TEST)
 AC_SUBST(BUILD_QT)
 AC_SUBST(BUILD_TEST_QT)
-AC_CONFIG_FILES([Makefile src/Makefile src/test/Makefile share/setup.nsi])
+AC_CONFIG_FILES([Makefile src/Makefile src/qt/Makefile src/qt/test/Makefile src/test/Makefile share/setup.nsi])
 AC_CONFIG_FILES([qa/pull-tester/run-bitcoind-for-test.sh],[chmod +x qa/pull-tester/run-bitcoind-for-test.sh])
 AC_CONFIG_FILES([qa/pull-tester/build-tests.sh],[chmod +x qa/pull-tester/build-tests.sh])
 AC_OUTPUT
@@ -848,7 +851,7 @@ echo "${DARK_GREY}════════════════════�
 echo "${MEDIUM_GREY}Wallet Support:              ${LIGHT_GREY}$enable_wallet${NC}"
 echo "${MEDIUM_GREY}GUI/Qt Support:              ${LIGHT_GREY}$bitcoin_enable_qt${NC}"
 if test x$bitcoin_enable_qt != xno; then
-    echo "    ${MEDIUM_GREY}Qt Version:              ${LIGHT_GREY}$bitcoin_qt_got_major_vers${NC}"
+    echo "    ${MEDIUM_GREY}Qt Version:              ${LIGHT_GREY}$QT_VERSION${NC}"
     echo "    ${MEDIUM_GREY}QR Support:              ${LIGHT_GREY}$use_qr${NC}"
 fi
 echo "${MEDIUM_GREY}UPnP Support:                ${LIGHT_GREY}$use_upnp${NC}"

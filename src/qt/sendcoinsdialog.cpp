@@ -151,23 +151,12 @@ void SendCoinsDialog::on_sendButton_clicked()
 
         QString recipientElement;
 
-        if (!rcp.paymentRequest.IsInitialized()) // normal payment
+        if(rcp.label.length() > 0) // label with address
         {
-            if(rcp.label.length() > 0) // label with address
-            {
-                recipientElement = tr("%1 to %2").arg(amount, GUIUtil::HtmlEscape(rcp.label));
-                recipientElement.append(QString(" (%1)").arg(address));
-            }
-            else // just address
-            {
-                recipientElement = tr("%1 to %2").arg(amount, address);
-            }
+            recipientElement = tr("%1 to %2").arg(amount, GUIUtil::HtmlEscape(rcp.label));
+            recipientElement.append(QString(" (%1)").arg(address));
         }
-        else if(!rcp.authenticatedMerchant.isEmpty()) // secure payment request
-        {
-            recipientElement = tr("%1 to %2").arg(amount, GUIUtil::HtmlEscape(rcp.authenticatedMerchant));
-        }
-        else // insecure payment request
+        else // just address
         {
             recipientElement = tr("%1 to %2").arg(amount, address);
         }
@@ -374,32 +363,6 @@ void SendCoinsDialog::pasteEntry(const SendCoinsRecipient &rv)
 
     entry->setValue(rv);
     updateTabsAndLabels();
-}
-
-bool SendCoinsDialog::handlePaymentRequest(const SendCoinsRecipient &rv)
-{
-    QString strSendCoins = tr("Send Coins");
-    if (rv.paymentRequest.IsInitialized()) {
-        // Expired payment request?
-        const payments::PaymentDetails& details = rv.paymentRequest.getDetails();
-        if (details.has_expires() && (int64_t)details.expires() < GetTime())
-        {
-            Q_EMIT message(strSendCoins, tr("Payment request expired"),
-                CClientUIInterface::MSG_WARNING);
-            return false;
-        }
-    }
-    else {
-        CBitcoinAddress address(rv.address.toStdString());
-        if (!address.IsValid()) {
-            Q_EMIT message(strSendCoins, tr("Invalid payment address %1").arg(rv.address),
-                CClientUIInterface::MSG_WARNING);
-            return false;
-        }
-    }
-
-    pasteEntry(rv);
-    return true;
 }
 
 void SendCoinsDialog::setBalance(qint64 balance, qint64 unconfirmedBalance, qint64 immatureBalance)

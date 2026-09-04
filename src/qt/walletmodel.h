@@ -5,7 +5,7 @@
 #ifndef WALLETMODEL_H
 #define WALLETMODEL_H
 
-#include "paymentrequestplus.h"
+#include "serialize.h"
 #include "walletmodeltransaction.h"
 
 #include "allocators.h" /* for SecureString */
@@ -39,18 +39,10 @@ public:
     explicit SendCoinsRecipient(const QString &addr, const QString &label, quint64 amount):
         address(addr), label(label), amount(amount), nVersion(SendCoinsRecipient::CURRENT_VERSION) {}
 
-    // If from an insecure payment request, this is used for storing
-    // the addresses, e.g. address-A<br />address-B<br />address-C.
-    // Info: As we don't need to process addresses in here when using
-    // payment requests, we can abuse it for displaying an address list.
-    // Todo: This is a hack, should be replaced with a cleaner solution!
     QString address;
     QString label;
     qint64 amount;
 
-    // If from a payment request, paymentRequest.IsInitialized() will be true
-    PaymentRequestPlus paymentRequest;
-    // Empty if no authentication or invalid signature/cert/etc.
     QString authenticatedMerchant;
 
     static const int CURRENT_VERSION = 1;
@@ -62,9 +54,6 @@ public:
 
         std::string sAddress = pthis->address.toStdString();
         std::string sLabel = pthis->label.toStdString();
-        std::string sPaymentRequest;
-        if (!fRead && pthis->paymentRequest.IsInitialized())
-            pthis->paymentRequest.SerializeToString(&sPaymentRequest);
         std::string sAuthenticatedMerchant = pthis->authenticatedMerchant.toStdString();
 
         READWRITE(pthis->nVersion);
@@ -72,15 +61,12 @@ public:
         READWRITE(sAddress);
         READWRITE(sLabel);
         READWRITE(amount);
-        READWRITE(sPaymentRequest);
         READWRITE(sAuthenticatedMerchant);
 
         if (fRead)
         {
             pthis->address = QString::fromStdString(sAddress);
             pthis->label = QString::fromStdString(sLabel);
-            if (!sPaymentRequest.empty())
-                pthis->paymentRequest.parse(QByteArray::fromRawData(sPaymentRequest.data(), sPaymentRequest.size()));
             pthis->authenticatedMerchant = QString::fromStdString(sAuthenticatedMerchant);
         }
     )

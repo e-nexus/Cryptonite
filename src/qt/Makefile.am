@@ -3,13 +3,12 @@ include $(top_srcdir)/src/Makefile.include
 AM_CPPFLAGS += -I$(top_srcdir)/src \
   -I$(top_builddir)/src/qt \
   -I$(top_builddir)/src/qt/forms \
-  $(PROTOBUF_CFLAGS) \
   $(QR_CFLAGS) \
   -fpermissive -ffloat-store -std=c++17 -DQT_NO_KEYWORDS -D__STDC_LIMIT_MACROS -D__USE_MINGW_ANSI_STDIO
 bin_PROGRAMS = cryptonite-qt
 noinst_LIBRARIES = libcryptoniteqt.a
-SUBDIRS = . 
-DIST_SUBDIRS = . 
+SUBDIRS = . $(BUILD_TEST_QT)
+DIST_SUBDIRS = . test 
 
 # bitcoin qt core #
 QT_TS = \
@@ -128,7 +127,6 @@ QT_MOC_CPP = \
   moc_optionsmodel.cpp \
   moc_overviewpage.cpp \
   moc_peertablemodel.cpp \
-  moc_paymentserver.cpp \
   moc_qvalidatedlineedit.cpp \
   moc_qvaluecombobox.cpp \
   moc_receivecoinsdialog.cpp \
@@ -163,9 +161,30 @@ QT_MOC = \
 QT_QRC_CPP = qrc_bitcoin.cpp
 QT_QRC = bitcoin.qrc
 
-PROTOBUF_CC = paymentrequest.pb.cc
-PROTOBUF_H = paymentrequest.pb.h
-PROTOBUF_PROTO = paymentrequest.proto
+# MOC/UIC/RCC pattern rules for Qt 6.
+# moc6 takes a header and emits moc_<header>.cpp in the build dir.
+# It also takes a .cpp and emits <basename>.moc (used by `#include "x.moc"`).
+# uic6 takes a .ui and emits ui_<name>.h in the same dir.
+# rcc6 takes a .qrc and emits a single C++ source.
+%.moc: %.cpp
+	$(MOC) $(QT_INCLUDES) -o $@ $<
+
+moc_%.cpp: %.h
+	$(MOC) $(QT_INCLUDES) -o $@ $<
+
+ui_%.h: %.ui
+	$(UIC) -o $@ $<
+
+# Translation .ts -> compiled .qm. lrelease6 is shipped by qt6-tools-dev-tools;
+# if it's missing, the .qm simply won't be produced and bitcoin.qrc will fall
+# back to shipping only the .ts sources, which is harmless at runtime.
+%.qm: %.ts
+	@if test -n "$(LRELEASE)" && $(LRELEASE) $< -qm $@ 2>/dev/null; then \
+	    true; \
+	else \
+	    echo "warning: $(LRELEASE) failed for $<; producing empty stub"; \
+	    touch $@; \
+	fi
 
 BITCOIN_QT_H = \
   addressbookpage.h \
@@ -192,7 +211,6 @@ BITCOIN_QT_H = \
   optionsmodel.h \
   overviewpage.h \
   paymentrequestplus.h \
-  paymentserver.h \
   peertablemodel.h \
   qvalidatedlineedit.h \
   qvaluecombobox.h \
@@ -283,6 +301,10 @@ BITCOIN_QT_CPP = \
   trafficgraphwidget.cpp \
   utilitydialog.cpp
 
+# PeerTableModel is not wallet-specific, but lives in src/qt/ and is required
+# by RPCConsole unconditionally.
+BITCOIN_QT_CPP += peertablemodel.cpp
+
 if ENABLE_WALLET
 BITCOIN_QT_CPP += \
   addressbookpage.cpp \
@@ -293,7 +315,6 @@ BITCOIN_QT_CPP += \
   editaddressdialog.cpp \
   openuridialog.cpp \
   overviewpage.cpp \
-  paymentrequestplus.cpp \
   receivecoinsdialog.cpp \
   receiverequestdialog.cpp \
   recentrequeststablemodel.cpp \
@@ -305,8 +326,6 @@ BITCOIN_QT_CPP += \
   walletframe.cpp \
   walletmodeltransaction.cpp \
   walletview.cpp \
-  paymentserver.cpp \
-  peertablemodel.cpp \
   walletmodel.cpp \
   signverifymessagedialog.cpp \
   sendcoinsdialog.cpp \
@@ -326,17 +345,11 @@ BITCOIN_RC = res/bitcoin-qt-res.rc
 libcryptoniteqt_a_CPPFLAGS = $(AM_CPPFLAGS) $(QT_INCLUDES) \
   -I$(top_srcdir)/src/qt/forms $(QT_DBUS_INCLUDES)
 libcryptoniteqt_a_SOURCES = $(BITCOIN_QT_CPP) $(BITCOIN_QT_H) $(QT_FORMS_UI) \
-  $(QT_QRC) $(QT_TS) $(PROTOBUF_PROTO) $(RES_ICONS) $(RES_IMAGES) $(RES_MOVIES)
+  $(QT_QRC) $(QT_TS) $(RES_ICONS) $(RES_IMAGES) $(RES_MOVIES)
 
-nodist_libcryptoniteqt_a_SOURCES = $(QT_MOC_CPP) $(QT_MOC) $(PROTOBUF_CC) \
-  $(PROTOBUF_H) $(QT_QRC_CPP)
+nodist_libcryptoniteqt_a_SOURCES = $(QT_MOC_CPP) $(QT_MOC) $(QT_QRC_CPP)
 
 BUILT_SOURCES = $(nodist_libcryptoniteqt_a_SOURCES)
-
-#Generating these with a half-written protobuf header leads to wacky results.
-#This makes sure it's done.
-$(QT_MOC): $(PROTOBUF_H)
-$(QT_MOC_CPP): $(PROTOBUF_H)
 
 # bitcoin-qt binary #
 cryptonite_qt_CPPFLAGS = $(AM_CPPFLAGS) $(QT_INCLUDES) \
@@ -353,7 +366,7 @@ if ENABLE_WALLET
 cryptonite_qt_LDADD += $(LIBBITCOIN_WALLET)
 endif
 cryptonite_qt_LDADD += $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBLEVELDB) $(LIBMEMENV) \
-  $(BOOST_LIBS) $(QT_LIBS) $(QT_DBUS_LIBS) $(QR_LIBS) $(PROTOBUF_LIBS) $(BDB_LIBS)
+  $(BOOST_LIBS) $(QT_LIBS) $(QT_DBUS_LIBS) $(QRENCODE_LIBS) $(BDB_LIBS)
 cryptonite_qt_LDFLAGS = $(QT_LDFLAGS)
 
 # forms/foo.h -> forms/ui_foo.h
@@ -372,7 +385,7 @@ translate: cryptonitestrings.cpp $(QT_FORMS_UI) $(QT_FORMS_UI) $(BITCOIN_QT_CPP)
 	@test -n $(LUPDATE) || echo "lupdate is required for updating translations"
 	@QT_SELECT=$(QT_SELECT) $(LUPDATE) $^ -locations relative -no-obsolete -ts locale/bitcoin_en.ts
 
-$(QT_QRC_CPP): $(QT_QRC) $(QT_QM) $(QT_FORMS_H) $(RES_ICONS) $(RES_IMAGES) $(RES_MOVIES) $(PROTOBUF_H)
+$(QT_QRC_CPP): $(QT_QRC) $(QT_QM) $(QT_FORMS_H) $(RES_ICONS) $(RES_IMAGES) $(RES_MOVIES)
 	@cd $(abs_srcdir); test -f $(RCC) && QT_SELECT=$(QT_SELECT) $(RCC) -name bitcoin -o $(abs_builddir)/$@ $< || \
 	  echo error: could not build $@
 	$(SED) -i.bak -e '/^\*\*.*Created:/d' $@ && rm $@.bak

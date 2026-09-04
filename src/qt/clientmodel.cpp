@@ -116,17 +116,17 @@ quint64 ClientModel::getTotalBytesSent() const
 QDateTime ClientModel::getLastBlockDate() const
 {
     if (chainActive.Tip())
-        return QDateTime::fromTime_t(chainActive.Tip()->GetBlockTime());
+        return QDateTime::fromSecsSinceEpoch(chainActive.Tip()->GetBlockTime());
     else
-        return QDateTime::fromTime_t(Params().GenesisBlock().nTime); // Genesis block's time of current network
+        return QDateTime::fromSecsSinceEpoch(Params().GenesisBlock().nTime); // Genesis block's time of current network
 }
 
 QDateTime ClientModel::getLastHeaderDate() const
 {
     if (chainHeaders.Tip())
-        return QDateTime::fromTime_t(chainHeaders.Tip()->GetBlockTime());
+        return QDateTime::fromSecsSinceEpoch(chainHeaders.Tip()->GetBlockTime());
     else
-        return QDateTime::fromTime_t(Params().GenesisBlock().nTime); // Genesis block's time of current network
+        return QDateTime::fromSecsSinceEpoch(Params().GenesisBlock().nTime); // Genesis block's time of current network
 }
 
 double ClientModel::getVerificationProgress() const
@@ -237,7 +237,7 @@ QString ClientModel::clientName() const
 
 QString ClientModel::formatClientStartupTime() const
 {
-    return QDateTime::fromTime_t(nClientStartupTime).toString();
+    return QDateTime::fromSecsSinceEpoch(nClientStartupTime).toString();
 }
 
 QString ClientModel::dataDir() const

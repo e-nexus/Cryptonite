@@ -6,6 +6,7 @@
 #include "ui_coincontroldialog.h"
 
 #include "addresstablemodel.h"
+#include "base58.h"
 #include "bitcoinunits.h"
 #include "guiutil.h"
 #include "init.h"
@@ -382,7 +383,7 @@ void CoinControlDialog::viewItemChanged(QTreeWidgetItem* item, int column)
     //       Please remove this ugly fix, once the bug is solved upstream.
     if (column == COLUMN_CHECKBOX && item->childCount() > 0)
     {
-        if (item->checkState(COLUMN_CHECKBOX) == Qt::PartiallyChecked && item->child(0)->checkState(COLUMN_CHECKBOX) == Qt::PartiallyChecked)
+        if (item->checkState(COLUMN_CHECKBOX) == Qt::PartiallyChecked && item->model()->index(0, 0, item)->checkState(COLUMN_CHECKBOX) == Qt::PartiallyChecked)
             item->setCheckState(COLUMN_CHECKBOX, Qt::Checked);
     }
 #else
@@ -426,7 +427,7 @@ void CoinControlDialog::updateLabels(WalletModel *model, QDialog* dialog)
     bool fLowOutput = false;
     bool fDust = false;
     CTransaction txDummy;
-    foreach(const qint64 &amount, CoinControlDialog::payAmounts)
+    for (const qint64& amount : CoinControlDialog::payAmounts)
     {
         nPayAmount += amount;
 
@@ -637,7 +638,7 @@ void CoinControlDialog::updateView()
     ui->treeWidget->setEnabled(false); // performance, otherwise updateLabels would be called for every checked checkbox
     ui->treeWidget->setAlternatingRowColors(!treeMode);
     QFlags<Qt::ItemFlag> flgCheckbox = Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable;
-    QFlags<Qt::ItemFlag> flgTristate = Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsTristate;
+    QFlags<Qt::ItemFlag> flgTristate = Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsUserTristate;
 
     int nDisplayUnit = model->getOptionsModel()->getDisplayUnit();
 

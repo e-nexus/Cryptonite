@@ -10,7 +10,6 @@
 #include "base58.h"
 #include "db.h"
 #include "main.h"
-#include "paymentserver.h"
 #include "transactionrecord.h"
 #include "ui_interface.h"
 #include "wallet.h"
@@ -193,27 +192,7 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx, int vout, int u
         strHTML += "<br><b>" + tr("Message") + ":</b><br>" + GUIUtil::HtmlEscape(string(wtx.msg.begin(),wtx.msg.end()), true) + "<br>";
 
         strHTML += "<b>" + tr("Transaction ID") + ":</b> " + QString::fromStdString(wtx.GetTxID().ToString()) + "<br>";
-#if 0 //TODO: wtf is this stuff?
-        // Message from normal bitcoin:URI (bitcoin:123...?message=example)
-        for (const std::pair<string, string>& r : wtx.vOrderForm)
-            if (r.first == "Message")
-                strHTML += "<br><b>" + tr("Message") + ":</b><br>" + GUIUtil::HtmlEscape(r.second, true) + "<br>";
 
-        //
-        // PaymentRequest info:
-        //
-        for (const std::pair<string, string>& r : wtx.vOrderForm)
-        {
-            if (r.first == "PaymentRequest")
-            {
-                PaymentRequestPlus req;
-                req.parse(QByteArray::fromRawData(r.second.data(), r.second.size()));
-                QString merchant;
-                if (req.getMerchant(PaymentServer::getCertStore(), merchant))
-                    strHTML += "<b>" + tr("Merchant") + ":</b> " + GUIUtil::HtmlEscape(merchant) + "<br>";
-            }
-        }
-#endif
         //
         // Debug view
         //
