@@ -68,17 +68,17 @@ void TrieSync::Update(){
     LOCK(cs_main);
     for (std::pair<CBlockIndex*,CSlice*> pair : slices){
 	if(chainHeaders.Contains(pair.first) && (chainHeaders.Height() - pair.first->nHeight) >= (int64_t)MIN_HISTORY){
-   	    //Slices are also no good if any tx data is missing between them and tip
-    	    CBlockIndex *pindex = chainHeaders.Tip();
-	    int cnt=0;
-	    for(int i=pair.first->nHeight; i < pair.first->nHeight + MIN_HISTORY; i++){
-	     	if(!(chainHeaders[i]->nStatus & BLOCK_HAVE_DATA)){
-		    delete pair.second;
-		    slices.erase(pair.first);		
-	    	    continue;
-		}
-	    }
-	    continue;
+		    //Slices are also no good if any tx data is missing between them and tip
+		    CBlockIndex *pindex = chainHeaders.Tip();
+	int cnt=0;
+	for(int i=pair.first->nHeight; i < pair.first->nHeight + (int64_t)MIN_HISTORY; i++){
+	if(!(chainHeaders[i]->nStatus & BLOCK_HAVE_DATA)){
+	delete pair.second;
+	slices.erase(pair.first);
+	continue;
+	}
+	}
+	continue;
 	}
 	
 	delete pair.second;
@@ -314,10 +314,23 @@ CSlice TrieSync::GetSlice(NodeId id){
 	return CSlice((uint256)0);
     }
     //TODO: totally not safe for short tries
-    CSlice *ret = new CSlice(chainHeaders[chainHeaders.Height()-MIN_HISTORY]->GetBlockHash());
+    // chainHeaders.Height() returns -1 on an empty chain and MIN_HISTORY is
+    // uint64_t. Unsigned subtraction of those yields a huge positive value,
+    // and operator[] with an out-of-range unsigned index would dereference
+    // vChain far past its end -- a guaranteed SIGSEGV on a fresh datadir
+    // the first time a peer asks for a slice. Promote to int64_t and guard
+    // explicitly; on an empty / very young chain there is no useful sync
+    // point to advertise, so return an empty slice instead.
+    if (chainHeaders.Height() < 0 ||
+        (uint64_t)chainHeaders.Height() < MIN_HISTORY) {
+        return CSlice((uint256)0);
+    }
+    int64_t syncHeight = (int64_t)chainHeaders.Height() - (int64_t)MIN_HISTORY;
+    CBlockIndex* pSyncAnchor = chainHeaders[syncHeight];
+    CSlice *ret = new CSlice(pSyncAnchor->GetBlockHash());
     ret->m_left = lowest;
     ret->m_right = right;
-    slicesRequested.insert(pair<CBlockIndex*,CSlice*>(chainHeaders[chainHeaders.Height()-MIN_HISTORY],ret));
+    slicesRequested.insert(pair<CBlockIndex*,CSlice*>(pSyncAnchor,ret));
     return *ret;
 }
 

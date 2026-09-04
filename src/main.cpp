@@ -124,6 +124,11 @@ struct CBlockIndexWorkComparator
 };
 
 CBlockIndex *pindexBestInvalid;
+// Set by ConnectBlock on the first genesis accept (the isGenesis branch).
+// Re-read by LoadBlockIndexDB and InitBlockIndex on every restart via the
+// non-inserting LookupBlockIndex helper; both functions may also overwrite
+// it with a fresh InsertBlockIndex result on a fresh datadir. Never write
+// to it directly outside ConnectBlock/LoadBlockIndexDB/InitBlockIndex.
 CBlockIndex *pindexGenesisBlock;
 CBlockIndex *pindexSyncPoint;
 set<CBlockIndex*, CBlockIndexWorkComparator> setBlockIndexValid; // may contain all CBlockIndex*'s that have validness >=BLOCK_VALID_TRANSACTIONS, and must contain those who aren't failed
@@ -1333,14 +1338,29 @@ bool ConnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex,bo
 
     //run checkblock size here now that we can calculate the size.
 #if 1
-    CBlockIndex *pindexPrev = mapBlockIndex[block.hashPrevBlock];
-    uint64_t max_size = GetNextMaxSize(pindexPrev);
+    // Non-inserting lookup. operator[] would silently insert a null
+    // CBlockIndex* on a missing hashPrevBlock (the genesis block has
+    // hashPrevBlock == uint256(0) and is the only block for which the
+    // map currently has no entry at that key), and the subsequent deref
+    // of pindexPrev would crash. On every other block hashPrevBlock is
+    // already in mapBlockIndex because the parent was inserted first, so
+    // a missing entry is a peer-driven invariant violation -- reject the
+    // block with a DoS score rather than abort().
+    {
+        auto itPrev = mapBlockIndex.find(block.hashPrevBlock);
+        if (itPrev == mapBlockIndex.end())
+            return state.DoS(100, error("ConnectBlock() : prev block %s not found",
+                                        block.hashPrevBlock.GetHex().c_str()),
+                             REJECT_INVALID, "bad-prevblk");
+        CBlockIndex *pindexPrev = itPrev->second;
+        uint64_t max_size = GetNextMaxSize(pindexPrev);
 
-    // Size limits
-    if (block.vtx.size() > max_size || ::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION) > max_size)
-        return state.DoS(100, error("AcceptBlock() : size limits failed"),
-                         REJECT_INVALID, "bad-blk-length");
+        // Size limits
+        if (block.vtx.size() > max_size || ::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION) > max_size)
+            return state.DoS(100, error("AcceptBlock() : size limits failed"),
+                             REJECT_INVALID, "bad-blk-length");
 
+    }
 #endif
 
     int64_t nStart = GetTimeMicros();
@@ -1690,7 +1710,12 @@ void static UpdateMissingHeight() {
     AssertLockHeld(cs_main);
     LOCK(cs_missing);
 
-    int nWorstHeight = chainHeaders.Height() - MIN_HISTORY;
+    // chainHeaders.Height() returns -1 on an empty chain and MIN_HISTORY is
+    // uint64_t; mixed signed/unsigned arithmetic would promote -1 to a huge
+    // unsigned value and nWorstHeight would silently become garbage. Compute
+    // in int64_t so the empty-chain case stays at a sane negative number
+    // that the < 1 guard below clamps to 1.
+    int64_t nWorstHeight = (int64_t)chainHeaders.Height() - (int64_t)MIN_HISTORY;
 
     if(fTrieOnline && !ForceNoTrie()){
     	CBlockIndex *pfork = chainActive.FindFork(chainHeaders.Tip());
@@ -1724,7 +1749,13 @@ void static UpdateMissingHeight() {
 
 int GetTotalMissing(){
     LOCK(cs_missing);
-    int nWorstHeight = fTrieOnline ? chainActive.Height() : chainHeaders.Height() - MIN_HISTORY;
+    // chainHeaders.Height() returns -1 on an empty chain and MIN_HISTORY is
+    // uint64_t; mixed signed/unsigned arithmetic would promote -1 to a huge
+    // unsigned value. Compute in int64_t so the empty-chain case stays at a
+    // sane negative number that the < 1 guard clamps to 1.
+    int64_t nWorstHeight = fTrieOnline
+                           ? (int64_t)chainActive.Height()
+                           : (int64_t)chainHeaders.Height() - (int64_t)MIN_HISTORY;
     if(nWorstHeight<1)
 	nWorstHeight=1;
     int nBestHeaderHeight = chainHeaders.Height();
@@ -2286,7 +2317,12 @@ bool ProcessBlockHeader(CValidationState &state, const CBlockHeader* pheader){
     if (!AcceptBlockHeader(*pheader, state, pindexNew))
         return error("ProcessBlockHeader() : AcceptBlockHeader FAILED");
 
-    if(fTrieOnline && chainHeaders.Height() > (chainActive.Height() + (int64_t)MIN_HISTORY) && !ForceNoTrie()){
+    // Both sides are int; MIN_HISTORY is uint64_t so the literal cast must
+    // cover both operands to keep the comparison in the signed domain. The
+    // original code cast MIN_HISTORY but not chainActive.Height(), which on
+    // an empty chain still evaluated cleanly but is fragile if either
+    // operand's type changes.
+    if(fTrieOnline && (int64_t)chainHeaders.Height() > ((int64_t)chainActive.Height() + (int64_t)MIN_HISTORY) && !ForceNoTrie()){
 	fNeedsResync = true;
 	LogPrintf("Warning: saved state too old. Fast forward sync may not be possible. Run Resync!!!\n");
 	strMiscWarning = std::string("Warning: saved state too old. Fast forward sync may not be possible. Run Resync!!!");
@@ -2797,14 +2833,12 @@ bool static LoadBlockIndexDB()
     pblocktree->ReadSyncPoint(syncPoint);
     printf("Sync point %s\n", syncPoint.GetHex().c_str());
 
-    // Use a non-inserting lookup. operator[] would silently insert a null
-    // CBlockIndex* at the genesis key if the entry is missing, then the
-    // null pointer would be picked up by the "Incorrect or no genesis
-    // block found" check downstream and by SetTip's preconditions.
-    {
-        auto itGenesis = mapBlockIndex.find(Params().HashGenesisBlock());
-        pindexGenesisBlock = (itGenesis != mapBlockIndex.end()) ? itGenesis->second : nullptr;
-    }
+    // Use the non-inserting LookupBlockIndex helper. operator[] would
+    // silently insert a null CBlockIndex* at the genesis key if the
+    // entry is missing, then the null pointer would be picked up by the
+    // "Incorrect or no genesis block found" check downstream and by
+    // SetTip's preconditions.
+    LookupBlockIndex(Params().HashGenesisBlock(), &pindexGenesisBlock);
 
     // If the genesis is already in the block index, wire it up. Otherwise
     // the caller (init.cpp) will fall through to InitBlockIndex(), which
@@ -2836,15 +2870,17 @@ bool static LoadBlockIndexDB()
     if(syncPoint!=0){
 	//Provisionally
 	fTrieOnline=true;
-	// Non-inserting lookup: syncPoint may reference a block that was
-	// pruned from LevelDB; operator[] would silently insert a null
-	// CBlockIndex* and the subsequent deref of pindexSyncPoint would crash.
-	{
-	    auto itSync = mapBlockIndex.find(syncPoint);
-	    pindexSyncPoint = (itSync != mapBlockIndex.end()) ? itSync->second : nullptr;
-	}
+	// Non-inserting lookup via LookupBlockIndex: syncPoint may
+	// reference a block that was pruned from LevelDB; operator[] would
+	// silently insert a null CBlockIndex* and the subsequent deref of
+	// pindexSyncPoint would crash.
+	LookupBlockIndex(syncPoint, &pindexSyncPoint);
 	if (pindexSyncPoint) {
 	    pindexSyncPoint->fConnected = true;
+	    // First SetTip in this load path: trust the persisted syncPoint
+	    // as the provisional tip until the accelerated-startup block
+	    // below either confirms it (no override) or moves the tip
+	    // further forward.
 	    chainActive.SetTip(pindexSyncPoint);
 	}
     }
@@ -2875,8 +2911,13 @@ bool static LoadBlockIndexDB()
 	    pmove = pindex;
 	    for(int i=144; i < MIN_HISTORY; i++){
 		pmove->fConnected=true;
-   	    	pmove = pmove->pprev;
+  	    	pmove = pmove->pprev;
 	    }
+	    // Second SetTip in this load path: the accelerated-startup
+	    // walk has verified the trailing 856 blocks have full data,
+	    // so it is safe to advance the tip past the syncPoint. This
+	    // intentionally overwrites the provisional SetTip above; if
+	    // canMove is false we leave the syncPoint tip in place.
 	    chainActive.SetTip(pindex);
 	}
     }
@@ -2888,10 +2929,13 @@ bool static LoadBlockIndexDB()
     // datadir the genesis is not in the block index until InitBlockIndex()
     // (called by the outer load loop in init.cpp) accepts it, so
     // chainActive may be empty here. Defer the summary until we have at
-    // least the genesis wired up.
+    // least the genesis wired up, but still emit a single-line summary
+    // with what we know so the operator can grep the log for a clean
+    // startup signal.
     if (chainActive.Tip() == nullptr) {
-        LogPrintf("LoadBlockIndexDB(): chain tip not yet set (genesis not in block index); "
-                  "InitBlockIndex() will accept the genesis on the next load-loop iteration\n");
+        LogPrintf("LoadBlockIndexDB(): trieOnline=%d hashBestChain=<deferred> height=-1 (genesis not yet in block index); "
+                  "InitBlockIndex() will accept the genesis on the next load-loop iteration\n",
+                  fTrieOnline);
         return true;
     }
 
@@ -3045,13 +3089,20 @@ bool InitBlockIndex() {
                 // cannot complete (pviewTip->m_bestBlock is zero and
                 // the trie is empty), so we expect that path to fail
                 // and we initialize the trie to the genesis state below.
-                AcceptBlock(block, state);
+                // We do NOT abort() on failure here: AcceptBlock returns
+                // false on a duplicate-insert path, on state.Abort (disk
+                // full etc.) and on a peer-driven DoS in the inner
+                // ConnectBlock. Logging the reason is enough; the
+                // pviewTip->Apply() below is the real fail-stop for
+                // correctness -- if Apply fails we return error().
+                if (!AcceptBlock(block, state)) {
+                    LogPrintf("WARNING: InitBlockIndex: AcceptBlock(genesis) returned %s; "
+                              "continuing -- trie seed below is authoritative\n",
+                              state.GetRejectReason().empty() ? "false" : state.GetRejectReason().c_str());
+                }
                 // After AcceptBlock the genesis is on disk in
                 // blk00000.dat; Apply reads it back and seeds the trie.
-                {
-                    auto it = mapBlockIndex.find(genesisHash);
-                    pindexGenesisBlock = (it != mapBlockIndex.end()) ? it->second : nullptr;
-                }
+                LookupBlockIndex(genesisHash, &pindexGenesisBlock);
                 if (pindexGenesisBlock && pviewTip->GetBestBlock() == uint256()) {
                     if (!pviewTip->Apply(pindexGenesisBlock))
                         return error("LoadBlockIndex() : trie rejected genesis block");
@@ -3060,12 +3111,7 @@ bool InitBlockIndex() {
                 // Genesis already in the block index. The earlier
                 // LoadBlockIndexDB path (or a prior successful run) wired
                 // it into chainActive; if not, wire it now.
-                // Use a non-inserting lookup (operator[] would silently
-                // insert a null CBlockIndex* if the entry were missing).
-                {
-                    auto it = mapBlockIndex.find(genesisHash);
-                    pindexGenesisBlock = (it != mapBlockIndex.end()) ? it->second : nullptr;
-                }
+                LookupBlockIndex(genesisHash, &pindexGenesisBlock);
                 if (pindexGenesisBlock && chainActive.Genesis() == nullptr) {
                     chainActive.SetTip(pindexGenesisBlock);
                     chainHeaders.SetTip(pindexGenesisBlock);

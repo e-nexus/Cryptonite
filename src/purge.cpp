@@ -49,7 +49,13 @@ void PurgeDB(){
     }
 
     printf("Tip is block %ld\n", chainActive.Height());
-    if(chainActive.Height() <= MIN_HISTORY){
+    // chainActive.Height() returns -1 on an empty chain; MIN_HISTORY is
+    // uint64_t. Promote both sides to int64_t so the comparison stays in
+    // the signed domain and the empty-chain case falls into the "not
+    // enough history" branch instead of evaluating as -1 <= 1000 (which
+    // implicit promotion renders TRUE anyway, but the explicit cast
+    // documents intent and survives any future type change).
+    if((int64_t)chainActive.Height() <= (int64_t)MIN_HISTORY){
 	printf("Not enough history to prune\n");
 	goto fail;
     }
@@ -59,8 +65,11 @@ void PurgeDB(){
 
     //mapBlockIndex contains all blocks, so we can read those for info
     for (std::pair<uint256, CBlockIndex*> item : mapBlockIndex){
-	CBlockIndex *pindex = item.second;	
-	if(pindex->nHeight + MIN_HISTORY >= chainActive.Height()){
+	CBlockIndex *pindex = item.second;
+	// MIN_HISTORY is uint64_t; promote both sides to int64_t to keep the
+	// comparison in the signed domain (see chainActive.Height() comment
+	// above).
+	if((int64_t)pindex->nHeight + (int64_t)MIN_HISTORY >= (int64_t)chainActive.Height()){
 	    //Block cannot be deleted
 	    if (pindex->nStatus & BLOCK_HAVE_DATA || pindex->nStatus & BLOCK_HAVE_UNDO)
 		setNeed.insert(pindex->nFile);
@@ -69,8 +78,8 @@ void PurgeDB(){
 
     //Second pass, locate all blocks that can have transactions deleted from txindex
     for (std::pair<uint256, CBlockIndex*> item : mapBlockIndex){
-	CBlockIndex *pindex = item.second;	
-	if(pindex->nHeight + MIN_HISTORY < chainActive.Height()){
+	CBlockIndex *pindex = item.second;
+	if((int64_t)pindex->nHeight + (int64_t)MIN_HISTORY < (int64_t)chainActive.Height()){
 	    //Block can be deleted
 	    if (pindex->nStatus & BLOCK_HAVE_DATA || pindex->nStatus & BLOCK_HAVE_UNDO)
 		//Block has TX's

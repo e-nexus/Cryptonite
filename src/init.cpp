@@ -855,78 +855,57 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     nTotalCache -= nCoinDBCache;
     nCoinCacheSize = nTotalCache / 300; // coins in memory require around 300 bytes
 
-    bool fLoaded = false;
-    while (!fLoaded) {
-        bool fReset = fReindex;
-        std::string strLoadError;
+    // Load the block index once. The previous shape used a do{ }while(false)
+    // retry loop that was single-pass in practice (the noui prompt it
+    // gated on was a no-op) so the loop added no value. Failures here
+    // surface via FailLoad which logs the reason and exits with the
+    // operator-actionable "Pass -reindex to rebuild." message.
+    auto FailLoad = [](const char* reason) {
+        LogPrintf("Aborted block database load: %s\n", reason);
+        LogPrintf("To rebuild the block database, restart with -reindex.\n");
+        return InitError(std::string(reason) + ". Pass -reindex to rebuild.");
+    };
 
-        uiInterface.InitMessage(_("Loading block index..."));
+    uiInterface.InitMessage(_("Loading block index..."));
 
-        nStart = GetTimeMillis();
-        do {
-            try {
-                UnloadBlockIndex();
-                delete pviewTip;
-                delete pblocktree;
+    nStart = GetTimeMillis();
+    try {
+        UnloadBlockIndex();
+        delete pviewTip;
+        delete pblocktree;
 
-                pblocktree = new CBlockTreeDB(nBlockTreeDBCache, false, fReindex);
-                pviewTip = new TrieView();
+        pblocktree = new CBlockTreeDB(nBlockTreeDBCache, false, fReindex);
+        pviewTip = new TrieView();
 
-                if (fReindex)
-                    pblocktree->WriteReindexing(true);
+        if (fReindex)
+            pblocktree->WriteReindexing(true);
 
-		fLoading = true;
-                if (!LoadBlockIndex()) {
-                    strLoadError = _("Error loading block database");
-                    break;
-                }
+	fLoading = true;
+        if (!LoadBlockIndex())
+            return FailLoad("Error loading block database");
 
-                // If the loaded chain has a wrong genesis, bail out immediately
-                // (we're likely using a testnet datadir, or the other way around).
-                if (!mapBlockIndex.empty() && chainActive.Genesis() == nullptr){
-		    printf("mapBlockIndex.size() %ld\n", mapBlockIndex.size());
-                    return InitError(_("Incorrect or no genesis block found. Wrong datadir for network?"));
-		}
+        // If the loaded chain has a wrong genesis, bail out immediately
+        // (we're likely using a testnet datadir, or the other way around).
+        if (!mapBlockIndex.empty() && chainActive.Genesis() == nullptr){
+	    printf("mapBlockIndex.size() %ld\n", mapBlockIndex.size());
+            return InitError(_("Incorrect or no genesis block found. Wrong datadir for network?"));
+	}
 
-                // Initialize the block index (no-op if non-empty database was already loaded)
-                if (!InitBlockIndex()) {
-                    strLoadError = _("Error initializing block database");
-                    break;
-                }
+        // Initialize the block index (no-op if non-empty database was already loaded)
+        if (!InitBlockIndex())
+            return FailLoad("Error initializing block database");
 
-                // Check for changed -txindex state
-                if (fTxIndex != GetBoolArg("-txindex", true)) {
-                    strLoadError = _("You need to rebuild the database using -reindex to change -txindex");
-                    break;
-                }
+        // Check for changed -txindex state
+        if (fTxIndex != GetBoolArg("-txindex", true))
+            return FailLoad("You need to rebuild the database using -reindex to change -txindex");
 
-                uiInterface.InitMessage(_("Verifying blocks..."));
-                if (!VerifyDB(GetArg("-checklevel", 3),
-                              GetArg("-checkblocks", 288))) {
-                    strLoadError = _("Corrupted block database detected");
-                    break;
-                }
-            } catch(std::exception &e) {
-                if (fDebug) LogPrintf("%s\n", e.what());
-                strLoadError = _("Error opening block database");
-                break;
-            }
-
-            fLoaded = true;
-        } while(false);
-
-        if (!fLoaded) {
-            // No interactive rebuild prompt. The headless (noui) message
-            // box handler always returns false with no way for the user
-            // to respond, so prompting is a no-op that leaves the operator
-            // staring at a question they cannot answer. Log the failure
-            // with the exact reason and a suggestion, then exit. If the
-            // operator wants to rebuild, they can re-run with -reindex
-            // on the command line.
-            LogPrintf("Aborted block database load: %s\n", strLoadError.c_str());
-            LogPrintf("To rebuild the block database, restart with -reindex.\n");
-            return InitError(strLoadError + ". Pass -reindex to rebuild.");
-        }
+        uiInterface.InitMessage(_("Verifying blocks..."));
+        if (!VerifyDB(GetArg("-checklevel", 3),
+                      GetArg("-checkblocks", 288)))
+            return FailLoad("Corrupted block database detected");
+    } catch(std::exception &e) {
+        if (fDebug) LogPrintf("%s\n", e.what());
+        return FailLoad("Error opening block database");
     }
 
     // As LoadBlockIndex can take several minutes, it's possible the user
