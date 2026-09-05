@@ -426,7 +426,13 @@ void BitcoinApplication::shutdownResult(int retval)
     // keeps the contract: by the time shutdownResult fires, the splash is
     // guaranteed gone.
     destroySplash();
-    quit(); // Exit main loop after shutdown finished
+    // Defer quit() by one event-loop iteration so the Quit event lands outside
+    // the slot that triggered it. In Qt 6, calling quit() directly from inside
+    // a slot that the event loop is currently dispatching is a documented
+    // no-op — the slot returns, the loop spins back to epoll_wait, and the
+    // process hangs forever holding the data-directory lock. This is the
+    // canonical workaround; see Qt docs "QCoreApplication::quit".
+    QMetaObject::invokeMethod(this, "quit", Qt::QueuedConnection);
 }
 
 void BitcoinApplication::handleRunawayException(const QString &message)
